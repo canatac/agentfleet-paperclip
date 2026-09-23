@@ -24483,6 +24483,7 @@ export function heartbeatService(
           logBytes: logSummary?.bytes,
           logSha256: logSummary?.sha256,
           logCompressed: logSummary?.compressed ?? false,
+          externalRunId: adapterResult.sessionParams?.hermesRunId ?? null,
         };
         const persistedRunWrite = await setRunStatusIfRunning(
           run.id,
@@ -25109,6 +25110,7 @@ export function heartbeatService(
           logBytes: logSummary?.bytes,
           logSha256: logSummary?.sha256,
           logCompressed: logSummary?.compressed ?? false,
+          externalRunId: adapterResult.sessionParams?.hermesRunId ?? null,
         });
         if (
           !failedRunWrite.updated &&
