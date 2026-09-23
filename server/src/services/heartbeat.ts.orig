@@ -24483,7 +24483,6 @@ export function heartbeatService(
           logBytes: logSummary?.bytes,
           logSha256: logSummary?.sha256,
           logCompressed: logSummary?.compressed ?? false,
-          externalRunId: typeof adapterResult.sessionParams?.hermesRunId === 'string' ? adapterResult.sessionParams.hermesRunId : null,
         };
         const persistedRunWrite = await setRunStatusIfRunning(
           run.id,
