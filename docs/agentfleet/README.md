@@ -51,23 +51,47 @@ Vérifications sur l'upstream public :
 
 `syncedAt` est la date de positionnement de `main` sur ce commit.
 
-## Workflows hérités de l'upstream
+## Workflows
 
-`main` contient les 20 workflows de l'upstream (`.github/workflows/`). Les
-Actions ne sont pas activées sur ce fork : aucun ne s'exécute. Plusieurs
-publieraient ou appelleraient des services upstream s'ils s'exécutaient :
-`release.yml` (push sur `master` et tâche planifiée quotidienne),
-`docker.yml` (push sur `master` et tags `v*`), `commitperclip-review.yml`
-(`pull_request_target`), `pr.yml` (toute pull request).
+Les 20 workflows de l'upstream ont été retirés de `main`
+([paperclip-fleet#63](https://github.com/canatac/paperclip-fleet/issues/63),
+décision de l'opérateur du 25/09/2026). Plusieurs publiaient ou appelaient des
+services upstream (`release.yml`, `docker.yml`, `commitperclip-review.yml` en
+`pull_request_target`, `pr.yml` sur les runners AWS de l'upstream). Le fork
+n'a que ses propres workflows, sur runners GitHub (spécification §6.1 et §7) :
+`ci.yml`, `integration.yml`, `release-image.yml`, `dependency-review.yml`
+([paperclip-fleet#19](https://github.com/canatac/paperclip-fleet/issues/19)).
+Les scripts appelés par les workflows upstream (`scripts/`, `.github/scripts/`)
+sont conservés.
 
-Avant d'activer les Actions pour la CI AgentFleet
-([paperclip-fleet#19](https://github.com/canatac/paperclip-fleet/issues/19)),
-ces workflows doivent être retirés ou neutralisés dans `main`, par une PR
-dédiée, pour ne garder que `ci.yml`, `integration.yml`, `release-image.yml` et
-`dependency-review.yml` (spécification §6.1).
+### Tests exclus de la régression
+
+Ces tests upstream lisent les fichiers de workflow retirés et vérifient
+l'infrastructure de release, de cloud et de CI de l'upstream, que le fork
+n'utilise pas. Constat du 25/09/2026, avec et sans les workflows : ils passent
+tous quand les workflows sont présents, et échouent sans eux. Ils sont exclus
+de la régression du fork
+([paperclip-fleet#66](https://github.com/canatac/paperclip-fleet/issues/66)) ;
+aucun autre test ne l'est à ce titre.
+
+| Fichier | Lanceur | Échecs sans les workflows |
+|---|---|---|
+| `.github/scripts/tests/cloud-readiness.test.mjs` | `node --test` | 1 / 18 |
+| `.github/scripts/tests/lockfile-refresh-workflows.test.mjs` | `node --test` | 1 / 1 |
+| `packages/paperclip-runner/scripts/runner-protocol-eval-workflow-security.test.mjs` | `node --test` | 4 / 4 |
+| `scripts/__tests__/e2e-shard.test.mjs` | `node --test` | 6 / 11 |
+| `scripts/__tests__/release-verify-workflow.test.mjs` | `node --test` | 11 / 12 |
+| `scripts/__tests__/storybook-deploy.test.mjs` | `node --test` | 1 / 20 |
+| `scripts/cloud-migrator-artifacts.test.mjs` | `node --test` | 1 / 7 |
+| `scripts/preview-artifacts.test.mjs` | `node --test` | 6 / 19 |
+| `scripts/release-lib.test.mjs` | `node --test` | ne se charge plus (15 tests) |
+| `server/src/__tests__/cloud-image-bundled-plugins.test.ts` | Vitest (serveur) | ne se charge plus (5 tests) |
+| `tests/runner-e2e/codex-ci-sandbox.test.ts`, `daytona-image.test.ts`, `workflow-security.test.ts` | Vitest (`tests/runner-e2e`) | 11 / 18 |
 
 ## Resynchronisation avec l'upstream
 
 Chaque montée de version upstream passe par une PR dédiée qui intègre la
 release visée dans `main` et met à jour `upstream-version.json`, sans autre
-changement.
+changement. Les workflows upstream restent retirés : un workflow ajouté ou
+modifié par l'upstream est supprimé dans la même PR, et la liste des tests
+exclus ci-dessus est revue.
