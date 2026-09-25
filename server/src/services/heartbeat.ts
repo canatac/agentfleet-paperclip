@@ -1,6 +1,7 @@
 import { AGENT_CHAT_DIRECTIVE, conversationReplay, isConversation, isConversationExecutionWake, isWaitingConversation, prepareConversationTurn, settleConversationTurn } from "./agent-conversations.js";
 import { PROCESS_IDENTITY_RECORDED, recordNativeLocalProcessStop } from "./native-local-process-stop.js";
 import { hasAcknowledgedNativeStopIntent, isAcknowledgedNativeStop, acknowledgedNativeStopExecutionHasStopped } from "./acknowledged-native-stop.js";
+import { resolveTerminalExternalRunId } from "./heartbeat-external-run-id.js";
 import { legacyControllerBootId, legacyControllerClaim, renewLegacyControllerLease, hasLiveLegacyController, revokeExpiredLegacyController, watchLegacyControllerLease } from "./legacy-controller-lease.js";
 import { completeTerminatedRemoteNativeSessionCleanup } from "../vendor/paperclip-runner/index.js";
 import { hasRemoteTerminationReceipt, remoteExecutionHasStopped, remoteTerminationReceipt, stoppedRemoteCleanupScopes } from "./remote-execution-termination.js";
@@ -24446,6 +24447,24 @@ export function heartbeatService(
               } as Record<string, unknown>)
             : null;
 
+        // Hermes run id of this run (AF-OBS-003): written by the terminal patch
+        // below, never over a stored value; a rejected value stays observable.
+        const externalRunIdResolution = resolveTerminalExternalRunId({
+          adapterType: agent.adapterType,
+          sessionParams: adapterResult.sessionParams,
+          existingExternalRunId: latestRun?.externalRunId,
+        });
+        if (externalRunIdResolution.kind === "rejected") {
+          logger.warn(
+            { runId: run.id, externalRunIdError: externalRunIdResolution.error },
+            "Hermes run id not recorded on the run",
+          );
+          await onLog(
+            "stderr",
+            `[paperclip] Hermes run id not recorded (${externalRunIdResolution.error.code}): ${externalRunIdResolution.error.message}\n`,
+          );
+        }
+
         const persistedResultJson = mergeHeartbeatRunResultJson(
           mergeRunStopMetadataForAgent(agent, outcome, {
             resultJson: mergeAdapterRecoveryMetadata({
@@ -24456,6 +24475,9 @@ export function heartbeatService(
                 ...parseObject(adapterResult.resultJson),
                 ...(adapterResult.executionRecovery
                   ? { executionRecovery: adapterResult.executionRecovery }
+                  : {}),
+                ...(externalRunIdResolution.kind === "rejected"
+                  ? { externalRunIdError: externalRunIdResolution.error }
                   : {}),
                 configFreshness: configFreshnessResultMetadata,
               },
@@ -24478,6 +24500,9 @@ export function heartbeatService(
           resultJson: persistedResultJson,
           sessionIdAfter:
             nextSessionState.displayId ?? nextSessionState.legacySessionId,
+          ...(externalRunIdResolution.kind === "set"
+            ? { externalRunId: externalRunIdResolution.externalRunId }
+            : {}),
           stdoutExcerpt,
           stderrExcerpt,
           logBytes: logSummary?.bytes,

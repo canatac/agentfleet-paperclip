@@ -391,9 +391,15 @@ async function fetchJson(input: RequestInfo | URL, init: RequestInit): Promise<u
   return body;
 }
 
+// The Hermes run id is opaque and kept byte for byte: never trimmed
+// (docs/agentfleet/HERMES_RUN_LINK_CONTRACT.md).
+function untrimmedNonBlank(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
 function extractRunId(value: unknown): string | null {
   const record = asRecord(value);
-  return nonEmpty(record?.run_id) ?? nonEmpty(record?.runId) ?? nonEmpty(record?.id);
+  return untrimmedNonBlank(record?.run_id) ?? untrimmedNonBlank(record?.runId) ?? untrimmedNonBlank(record?.id);
 }
 
 function eventNameFromData(data: unknown, fallback: string | null): string | null {

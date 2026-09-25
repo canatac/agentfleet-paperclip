@@ -26,12 +26,12 @@ Hermes POST /v1/runs → run_id
 
 | Maillon | Code | État |
 |---|---|---|
-| Identifiant reçu de Hermes | `extractRunId` (`packages/adapters/hermes/src/gateway/server/execute.ts`) : `run_id`, sinon `runId`, sinon `id` | présent ; **rogné** par `nonEmpty` (`trim`) |
+| Identifiant reçu de Hermes | `extractRunId` (`packages/adapters/hermes/src/gateway/server/execute.ts`) : `run_id`, sinon `runId`, sinon `id` | présent ; **rogné** par `nonEmpty` (`trim`) ; corrigé par AF-OBS-003 |
 | Réponse de création sans identifiant | même fichier : erreur `hermes_gateway_protocol_error`, « Hermes /v1/runs response did not include run_id. » | présent |
 | `sessionParams.hermesRunId` | `mapFinalResultForTest` (terminal) et chemin de délai dépassé | présent sur ces deux sorties |
-| Sérialisation de session | `sessionCodec` (`.../gateway/server/index.ts`) : `readString` | présent ; **rogné** (`trim`) |
+| Sérialisation de session | `sessionCodec` (`.../gateway/server/index.ts`) : `readString` | présent ; **rogné** (`trim`) ; corrigé par AF-OBS-003 |
 | Colonne | `heartbeat_runs.external_run_id` (`packages/db/src/schema/heartbeat_runs.ts`), migration `0000` | présente, jamais écrite |
-| Écriture terminale | `finalRunPatch` puis `setRunStatusIfRunning` (`server/src/services/heartbeat.ts`) | n'écrit pas `externalRunId` |
+| Écriture terminale | `finalRunPatch` puis `setRunStatusIfRunning` (`server/src/services/heartbeat.ts`) | n'écrit pas `externalRunId` ; corrigé par AF-OBS-003 |
 | API | `externalRunId` dans `heartbeatRunListColumns` et le type `HeartbeatRun` (`packages/shared/src/types/heartbeat.ts`) ; `NULL` dans la projection résumée | présent, toujours `null` |
 
 Le correctif consiste donc à écrire la colonne dans le chemin terminal existant
@@ -97,9 +97,14 @@ Toute sortie de l'adaptateur **après** la création du run Hermes porte
 test.
 
 Un identifiant malformé ne change pas le statut du run Paperclip : le résultat
-métier reste celui que Hermes a rendu. Seule la corrélation est refusée, et ce
-refus doit apparaître dans le résultat ou le journal du run. Sa forme exacte
-est fixée par AF-OBS-003.
+métier reste celui que Hermes a rendu. Seule la corrélation est refusée, et le
+refus est observable à trois endroits (AF-OBS-003) :
+
+- `resultJson.externalRunIdError` du run : `code` (`hermes_run_id_invalid` ou
+  `external_run_id_conflict`), `reason` ou valeurs en conflit, `message` ;
+- une ligne `[paperclip] Hermes run id not recorded (...)` dans le journal du
+  run ;
+- un avertissement du serveur (`Hermes run id not recorded on the run`).
 
 ## Persistance
 
@@ -111,6 +116,21 @@ est fixée par AF-OBS-003.
 - **Conflit** : une valeur différente déjà présente pour le même run Paperclip
   n'est pas remplacée. La première valeur non nulle est conservée, et le
   conflit produit une erreur observable (AF-OBS-003, prouvé par AF-OBS-004).
+- Seul l'adaptateur `hermes_gateway` alimente la colonne : une clé
+  `hermesRunId` renvoyée par un autre adaptateur est ignorée.
+
+Implémentation (AF-OBS-003) : `resolveTerminalExternalRunId`
+(`server/src/services/heartbeat-external-run-id.ts`) décide de l'écriture à
+partir de `adapterResult.sessionParams.hermesRunId` et de la valeur déjà
+stockée ; le résultat est ajouté à `finalRunPatch`, sans autre écriture SQL.
+
+**Limite connue, à trancher dans AF-OBS-004** : quand un autre chemin a déjà
+terminé le run (annulation par l'utilisateur pendant l'exécution Hermes, par
+exemple), l'écriture terminale existante de l'adaptateur est volontairement
+sautée (« skipping late run finalization »). L'identifiant n'est alors pas
+écrit. Le couvrir demande soit une écriture dédiée de la seule colonne, soit
+une écriture dès la création du run Hermes : deux options qui s'écartent de
+« pas d'écriture SQL parallèle ».
 
 ## Séparation des sujets
 
