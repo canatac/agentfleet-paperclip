@@ -1,3 +1,5 @@
+import { and, eq, isNull } from "drizzle-orm";
+import { heartbeatRuns, type Db } from "@paperclipai/db";
 import {
   HermesRunIdError,
   hermesGatewayType,
@@ -70,4 +72,40 @@ export function resolveTerminalExternalRunId(input: {
       receivedExternalRunId: received,
     },
   };
+}
+
+export type LateExternalRunIdWrite =
+  | { outcome: "written" }
+  | { outcome: "unchanged" }
+  | { outcome: "conflict"; existingExternalRunId: string }
+  | { outcome: "missing" };
+
+/**
+ * Records the Hermes run id of a run that another path already finished (for
+ * example a stop during the Hermes execution), when the adapter's terminal
+ * write was skipped. Writes external_run_id only, and only while it is null:
+ * the status, the result and every other column stay as the winning path left
+ * them. Repeating the write with the same value changes nothing.
+ */
+export async function recordExternalRunIdIfUnset(
+  db: Db,
+  runId: string,
+  externalRunId: string,
+): Promise<LateExternalRunIdWrite> {
+  const written = await db
+    .update(heartbeatRuns)
+    .set({ externalRunId })
+    .where(and(eq(heartbeatRuns.id, runId), isNull(heartbeatRuns.externalRunId)))
+    .returning({ id: heartbeatRuns.id })
+    .then((rows) => rows[0] ?? null);
+  if (written) return { outcome: "written" };
+
+  const current = await db
+    .select({ externalRunId: heartbeatRuns.externalRunId })
+    .from(heartbeatRuns)
+    .where(eq(heartbeatRuns.id, runId))
+    .then((rows) => rows[0] ?? null);
+  if (!current) return { outcome: "missing" };
+  if (current.externalRunId === externalRunId) return { outcome: "unchanged" };
+  return { outcome: "conflict", existingExternalRunId: current.externalRunId ?? "" };
 }
