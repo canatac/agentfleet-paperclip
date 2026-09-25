@@ -93,8 +93,8 @@ est valide et conservée telle quelle.
 | Écriture terminale répétée, même valeur | présent | inchangé (idempotent) |
 
 Toute sortie de l'adaptateur **après** la création du run Hermes porte
-`sessionParams.hermesRunId`, y compris sur erreur. AF-OBS-004 le prouve par
-test.
+`sessionParams.hermesRunId`, y compris sur erreur (tests de l'adaptateur,
+AF-OBS-003).
 
 Un identifiant malformé ne change pas le statut du run Paperclip : le résultat
 métier reste celui que Hermes a rendu. Seule la corrélation est refusée, et le
@@ -124,13 +124,17 @@ Implémentation (AF-OBS-003) : `resolveTerminalExternalRunId`
 partir de `adapterResult.sessionParams.hermesRunId` et de la valeur déjà
 stockée ; le résultat est ajouté à `finalRunPatch`, sans autre écriture SQL.
 
-**Limite connue, à trancher dans AF-OBS-004** : quand un autre chemin a déjà
-terminé le run (annulation par l'utilisateur pendant l'exécution Hermes, par
-exemple), l'écriture terminale existante de l'adaptateur est volontairement
-sautée (« skipping late run finalization »). L'identifiant n'est alors pas
-écrit. Le couvrir demande soit une écriture dédiée de la seule colonne, soit
-une écriture dès la création du run Hermes : deux options qui s'écartent de
-« pas d'écriture SQL parallèle ».
+**Run déjà terminé par un autre chemin (AF-OBS-004)** : quand un autre chemin a
+déjà terminé le run (annulation par l'utilisateur pendant l'exécution Hermes,
+réconciliation), l'écriture terminale de l'adaptateur est volontairement sautée
+(« skipping late run finalization ») et ce chemin garde son issue. Décision de
+l'opérateur (25/09/2026) : l'identifiant est alors écrit par une écriture
+ciblée, `recordExternalRunIdIfUnset`, qui ne met à jour que
+`external_run_id`, et seulement tant qu'il est `null`. Le statut, le résultat et
+les autres colonnes restent ceux du chemin gagnant, `updatedAt` compris. La
+répéter avec la même valeur ne change rien ; une valeur différente est un
+conflit, journalisé par le serveur, et la première valeur est conservée. C'est
+le seul écart assumé à « pas d'écriture SQL parallèle ».
 
 ## Séparation des sujets
 

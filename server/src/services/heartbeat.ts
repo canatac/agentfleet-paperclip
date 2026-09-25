@@ -1,7 +1,7 @@
 import { AGENT_CHAT_DIRECTIVE, conversationReplay, isConversation, isConversationExecutionWake, isWaitingConversation, prepareConversationTurn, settleConversationTurn } from "./agent-conversations.js";
 import { PROCESS_IDENTITY_RECORDED, recordNativeLocalProcessStop } from "./native-local-process-stop.js";
 import { hasAcknowledgedNativeStopIntent, isAcknowledgedNativeStop, acknowledgedNativeStopExecutionHasStopped } from "./acknowledged-native-stop.js";
-import { resolveTerminalExternalRunId } from "./heartbeat-external-run-id.js";
+import { recordExternalRunIdIfUnset, resolveTerminalExternalRunId } from "./heartbeat-external-run-id.js";
 import { legacyControllerBootId, legacyControllerClaim, renewLegacyControllerLease, hasLiveLegacyController, revokeExpiredLegacyController, watchLegacyControllerLease } from "./legacy-controller-lease.js";
 import { completeTerminatedRemoteNativeSessionCleanup } from "../vendor/paperclip-runner/index.js";
 import { hasRemoteTerminationReceipt, remoteExecutionHasStopped, remoteTerminationReceipt, stoppedRemoteCleanupScopes } from "./remote-execution-termination.js";
@@ -24557,6 +24557,28 @@ export function heartbeatService(
               },
               "skipping late run finalization because the run already left running state",
             );
+            // The winning path keeps the terminal outcome, but the Hermes run id
+            // still links this run to its Hermes execution (AF-OBS-004).
+            if (externalRunIdResolution.kind === "set") {
+              const lateWrite = await recordExternalRunIdIfUnset(
+                db,
+                run.id,
+                externalRunIdResolution.externalRunId,
+              );
+              if (lateWrite.outcome === "conflict") {
+                logger.warn(
+                  {
+                    runId: run.id,
+                    externalRunIdError: {
+                      code: "external_run_id_conflict",
+                      existingExternalRunId: lateWrite.existingExternalRunId,
+                      receivedExternalRunId: externalRunIdResolution.externalRunId,
+                    },
+                  },
+                  "Hermes run id not recorded on the run",
+                );
+              }
+            }
             return;
           }
         }
