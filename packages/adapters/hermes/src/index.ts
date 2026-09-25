@@ -35,6 +35,10 @@ export {
   label as hermesGatewayLabel,
   models as hermesGatewayModels,
   type as hermesGatewayType,
+  HERMES_RUN_ID_MAX_BYTES,
+  HermesRunIdError,
+  normalizeHermesRunId,
+  type HermesRunIdErrorReason,
 } from "./gateway/index.js";
 
 /**

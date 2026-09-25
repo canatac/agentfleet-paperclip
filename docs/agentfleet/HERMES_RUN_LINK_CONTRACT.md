@@ -64,7 +64,12 @@ normalizeHermesRunId(value: unknown): string | null
 | chaîne vide ou composée uniquement d'espaces | erreur de protocole |
 | plus de 256 octets UTF-8 | erreur de protocole |
 | caractère de contrôle (U+0000 à U+001F, U+007F à U+009F) | erreur de protocole |
+| surrogate UTF-16 isolé (Unicode mal formé, impossible à stocker octet pour octet) | erreur de protocole |
 | toute autre chaîne, UUID ou non | la même chaîne, inchangée |
+
+L'erreur est une `HermesRunIdError` (code `hermes_run_id_invalid`, motif
+`not_a_string`, `blank`, `too_long`, `control_character` ou
+`malformed_unicode`), exportée par `@paperclipai/hermes-paperclip-adapter`.
 
 Choix documenté (§5.3 laisse le choix entre erreur et `null` pour une valeur
 malformée) : **erreur**. Une valeur malformée est une violation du protocole

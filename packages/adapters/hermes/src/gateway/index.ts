@@ -2,6 +2,13 @@ import type { AdapterSessionManagement, ServerAdapterModule } from "@paperclipai
 import { ADAPTER_LABEL, ADAPTER_TYPE } from "./shared/constants.js";
 import { execute, getConfigSchema, sessionCodec, testEnvironment } from "./server/index.js";
 
+export {
+  HERMES_RUN_ID_MAX_BYTES,
+  HermesRunIdError,
+  normalizeHermesRunId,
+  type HermesRunIdErrorReason,
+} from "./shared/run-id.js";
+
 export const type = ADAPTER_TYPE;
 export const label = ADAPTER_LABEL;
 export const models: { id: string; label: string }[] = [];
