@@ -8,6 +8,8 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # Manual run, for example on main after a repository setting change.
+  workflow_dispatch:
 
 permissions:
   contents: read

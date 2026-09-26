@@ -8,7 +8,8 @@ par SHA, un jeton en lecture seule et aucun secret.
 
 ## `ci.yml` (AF-CI-001b)
 
-Déclenché sur les pull requests vers `main` et sur les push sur `main`.
+Déclenché sur les pull requests vers `main`, sur les push sur `main`, et à la
+demande (`workflow_dispatch`, onglet Actions).
 
 | Job | Contrôles |
 |---|---|
