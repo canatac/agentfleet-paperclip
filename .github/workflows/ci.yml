@@ -1,6 +1,7 @@
 # AgentFleet CI of the fork (specification §7.1, §7.2): source integrity,
-# strict typecheck and the AgentFleet tests. GitHub-hosted runners only, actions pinned by SHA,
-# read-only token, no secret. Documented in docs/agentfleet/CI.md.
+# strict typecheck, the AgentFleet tests and the upstream regression suites.
+# GitHub-hosted runners only, actions pinned by SHA, read-only token, no
+# secret. Documented in docs/agentfleet/CI.md.
 name: ci
 
 on:
@@ -166,3 +167,74 @@ jobs:
             jq -c '{report: input_filename, total: .numTotalTests, passed: .numPassedTests, failed: .numFailedTests, skipped: .numPendingTests, todo: .numTodoTests}' "$report"
             jq -e '.numTotalTests > 0 and .numFailedTests == 0 and .numPendingTests == 0 and .numTodoTests == 0' "$report" >/dev/null
           done
+
+  # The upstream regression suites (docs/agentfleet/CI.md), in the lots of the
+  # upstream PR workflow. scripts/run-vitest-stable.mjs selects the suites of
+  # each lot; scripts/agentfleet/run-regression.mjs runs them and fails on any
+  # failed, skipped or todo test outside the exceptions approved in
+  # scripts/agentfleet/regression-policy.json.
+  regression-lot:
+    name: regression (${{ matrix.lot }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        lot:
+          - general-server:1/5
+          - general-server:2/5
+          - general-server:3/5
+          - general-server:4/5
+          - general-server:5/5
+          - general-workspaces-a:1/2
+          - general-workspaces-a:2/2
+          - general-workspaces-b
+          - serialized:1/5
+          - serialized:2/5
+          - serialized:3/5
+          - serialized:4/5
+          - serialized:5/5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Pinned pnpm (packageManager)
+        run: corepack enable pnpm
+
+      - name: Install from the lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Regression lot
+        env:
+          LOT: ${{ matrix.lot }}
+        run: node scripts/agentfleet/run-regression.mjs --lot "$LOT" --report-dir "$RUNNER_TEMP/regression"
+
+      - name: Keep the Vitest reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: regression-reports-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/regression
+          retention-days: 14
+          if-no-files-found: warn
+
+  # One check for the ruleset: every regression lot passed.
+  regression:
+    name: regression
+    needs: regression-lot
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every regression lot passed
+        env:
+          RESULT: ${{ needs.regression-lot.result }}
+        run: |
+          echo "regression lots: $RESULT"
+          test "$RESULT" = "success"
