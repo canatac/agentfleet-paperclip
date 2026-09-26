@@ -15,10 +15,12 @@
 // --plan prints the Vitest invocations of the lot as JSON and runs nothing.
 //
 // Lots (the CI matrix): general-server:<i>/<n>, general-workspaces-a:<i>/<n>,
-// general-workspaces-b and serialized:<i>/<n>, with i from 1 to n.
+// general-workspaces-b and serialized:<i>/<n>, with i from 1 to n, and
+// complement (AF-CI-001g): the server test files and the root Vitest projects
+// that none of the upstream lots selects, computed at each run.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,6 +41,9 @@ const upstreamTestScripts = {
 const sourceOnlyVitestArgs = ["--exclude", "**/dist/**"];
 const serializedServerVitestArgs = ["--no-file-parallelism", "--maxWorkers=1"];
 const serverProject = "@paperclipai/server";
+// Mirror of the test include of server/vitest.config.ts, pinned like the
+// runner: the complement lot lists the server test files with it.
+const serverVitestInclude = 'include: ["src/**/*.test.ts", "scripts/**/*.test.mjs"],';
 
 function fail(message) {
   console.error(`[regression] ${message}`);
@@ -67,13 +72,14 @@ function parseArgs(argv) {
 }
 
 function parseLot(value) {
-  const match = /^(general-server|general-workspaces-a|general-workspaces-b|serialized)(?::([1-9][0-9]*)\/([1-9][0-9]*))?$/.exec(value);
+  const match = /^(general-server|general-workspaces-a|general-workspaces-b|serialized|complement)(?::([1-9][0-9]*)\/([1-9][0-9]*))?$/.exec(value);
   if (!match) fail(`Unknown lot "${value}".`);
   const [, group, index, count] = match;
   const sharded = index !== undefined;
+  const unsharded = ["general-workspaces-b", "complement"];
   if (sharded && Number(index) > Number(count)) fail(`Lot "${value}": shard ${index} of ${count}.`);
-  if (group === "general-workspaces-b" && sharded) fail("general-workspaces-b is not sharded upstream.");
-  if (group !== "general-workspaces-b" && !sharded) fail(`Lot "${value}" needs a shard, for example ${group}:1/1.`);
+  if (unsharded.includes(group) && sharded) fail(`${group} is not sharded.`);
+  if (!unsharded.includes(group) && !sharded) fail(`Lot "${value}" needs a shard, for example ${group}:1/1.`);
   return {
     group,
     shardIndex: sharded ? Number(index) - 1 : null,
@@ -116,10 +122,8 @@ function loadPolicy() {
   return { excludedFiles: new Set(excludedFiles.map((entry) => entry.file)), allowedSkips };
 }
 
-function upstreamPlan(lot) {
-  const shardArgs = lot.shardCount === null ? [] : ["--shard-index", String(lot.shardIndex), "--shard-count", String(lot.shardCount)];
-  const modeArgs = lot.group === "serialized" ? ["--mode", "serialized"] : ["--mode", "general", "--group", lot.group];
-  const result = spawnSync(process.execPath, [upstreamRunner, ...modeArgs, ...shardArgs, "--dry-run"], {
+function upstreamDryRun(args) {
+  const result = spawnSync(process.execPath, [upstreamRunner, ...args, "--dry-run"], {
     cwd: repoRoot,
     encoding: "utf8",
   });
@@ -127,6 +131,61 @@ function upstreamPlan(lot) {
     fail(`${upstreamRunner} --dry-run failed: ${result.error?.message ?? result.stderr}`);
   }
   return JSON.parse(result.stdout);
+}
+
+function upstreamPlan(lot) {
+  const shardArgs = lot.shardCount === null ? [] : ["--shard-index", String(lot.shardIndex), "--shard-count", String(lot.shardCount)];
+  const modeArgs = lot.group === "serialized" ? ["--mode", "serialized"] : ["--mode", "general", "--group", lot.group];
+  return upstreamDryRun([...modeArgs, ...shardArgs]);
+}
+
+function listFiles(dir, suffix) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { recursive: true })
+    .map((entry) => path.join(dir, entry).split(path.sep).join("/"))
+    .filter((file) => file.endsWith(suffix) && !file.includes("/node_modules/") && !file.includes("/dist/"))
+    .map((file) => path.relative(repoRoot, file).split(path.sep).join("/"));
+}
+
+function serverTestFiles() {
+  const config = readFileSync(path.join(repoRoot, "server", "vitest.config.ts"), "utf8");
+  if (!config.includes(serverVitestInclude)) {
+    fail("server/vitest.config.ts test include changed. Review scripts/agentfleet/run-regression.mjs against it.");
+  }
+  return [
+    ...listFiles(path.join(repoRoot, "server", "src"), ".test.ts"),
+    ...listFiles(path.join(repoRoot, "server", "scripts"), ".test.mjs"),
+  ].sort((a, b) => a.localeCompare(b));
+}
+
+// The package names of the projects of the root vitest.config.ts.
+function rootVitestProjects() {
+  const config = readFileSync(path.join(repoRoot, "vitest.config.ts"), "utf8");
+  const match = /projects:\s*\[([^\]]*)\]/.exec(config);
+  if (!match || match[1].replace(/"[^"]*"/g, "").replace(/[\s,]/g, "") !== "") {
+    fail("vitest.config.ts projects are no longer a list of directories. Review scripts/agentfleet/run-regression.mjs against it.");
+  }
+  return [...match[1].matchAll(/"([^"]+)"/g)].map(([, dir]) => {
+    const manifest = path.join(repoRoot, dir, "package.json");
+    if (!existsSync(manifest)) fail(`vitest.config.ts project ${dir} has no package.json.`);
+    return JSON.parse(readFileSync(manifest, "utf8")).name;
+  });
+}
+
+// What the upstream lots leave out: the server test files that neither the
+// general-server group nor the serialized mode selects, and the root projects
+// that are neither the server nor a general-workspaces project.
+function complementPlan() {
+  const generalServer = upstreamDryRun(["--mode", "general", "--group", "general-server", "--shard-index", "0", "--shard-count", "1"]);
+  const serialized = upstreamDryRun(["--mode", "serialized", "--shard-index", "0", "--shard-count", "1"]);
+  const workspacesA = upstreamDryRun(["--mode", "general", "--group", "general-workspaces-a", "--shard-index", "0", "--shard-count", "1"]);
+  const workspacesB = upstreamDryRun(["--mode", "general", "--group", "general-workspaces-b"]);
+  const selectedFiles = new Set([...generalServer.selectedGeneralServerSuites, ...serialized.selectedSerializedSuites]);
+  const selectedProjects = new Set([serverProject, ...workspacesA.workspaceProjects, ...workspacesB.workspaceProjects]);
+  return {
+    serverFiles: serverTestFiles().filter((file) => !selectedFiles.has(file)),
+    projects: rootVitestProjects().filter((project) => !selectedProjects.has(project)),
+  };
 }
 
 function planInvocations(lot, plan, excludedFiles) {
@@ -139,7 +198,13 @@ function planInvocations(lot, plan, excludedFiles) {
     return true;
   };
   let invocations;
-  if (lot.group === "serialized") {
+  if (lot.group === "complement") {
+    // Server files one per isolated invocation, like the serialized mode.
+    invocations = [
+      ...plan.serverFiles.filter(keep).map((file) => ({ label: file, args: ["--project", serverProject, file, "--pool=forks", "--isolate"] })),
+      ...plan.projects.map((project) => ({ label: `complement project ${project}`, args: ["--project", project] })),
+    ];
+  } else if (lot.group === "serialized") {
     invocations = plan.selectedSerializedSuites
       .filter(keep)
       .map((file) => ({ label: file, args: ["--project", serverProject, file, "--pool=forks", "--isolate"] }));
@@ -266,8 +331,12 @@ const options = parseArgs(process.argv.slice(2));
 const lot = parseLot(options.lot);
 checkUpstreamRunner();
 const policy = loadPolicy();
-const plan = upstreamPlan(lot);
+const plan = lot.group === "complement" ? complementPlan() : upstreamPlan(lot);
 const { invocations, excluded } = planInvocations(lot, plan, policy.excludedFiles);
+if (invocations.length === 0 && lot.group === "complement") {
+  console.log("[regression] complement: the upstream lots select every server test file and root project.");
+  process.exit(0);
+}
 if (invocations.length === 0) fail(`Lot "${options.lot}" selects no suite.`);
 if (options.plan) {
   console.log(JSON.stringify({ lot: options.lot, excluded, invocations }, null, 2));
