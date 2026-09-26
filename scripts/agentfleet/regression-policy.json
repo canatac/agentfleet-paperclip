@@ -1,0 +1,11 @@
+{
+  "$comment": "AgentFleet regression policy (AF-CI-001d, docs/agentfleet/CI.md). excludedFiles: upstream test files not run in the fork, each with its reason and the decision that approved it; they must also be listed in docs/agentfleet/README.md. allowedSkips: skipped or todo tests accepted as exceptions, each matched by file and exact full name, with the decision that approved it. Any other skipped, todo or failed test fails the lot.",
+  "excludedFiles": [
+    {
+      "file": "server/src/__tests__/cloud-image-bundled-plugins.test.ts",
+      "reason": "reads .github/workflows/docker.yml and docker-cloud.yml, upstream workflows removed from the fork",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/63"
+    }
+  ],
+  "allowedSkips": []
+}

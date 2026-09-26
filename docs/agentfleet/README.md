@@ -94,4 +94,7 @@ Chaque montée de version upstream passe par une PR dédiée qui intègre la
 release visée dans `main` et met à jour `upstream-version.json`, sans autre
 changement. Les workflows upstream restent retirés : un workflow ajouté ou
 modifié par l'upstream est supprimé dans la même PR, et la liste des tests
-exclus ci-dessus est revue.
+exclus ci-dessus est revue, avec
+[`scripts/agentfleet/regression-policy.json`](../../scripts/agentfleet/regression-policy.json).
+Si le runner de tests upstream change, la régression échoue jusqu'à la relecture
+de `scripts/agentfleet/run-regression.mjs` (voir [`CI.md`](CI.md)).
