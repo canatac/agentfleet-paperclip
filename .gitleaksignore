@@ -1,0 +1,72 @@
+# Reviewed gitleaks findings that hold no secret (AF-CI-001e).
+#
+# One entry per finding: file:rule:line, in upstream content only. Reviewed
+# on 2026-09-26 with the values masked; the base commit is in
+# upstream-version.json. scripts/agentfleet/check-secrets.sh fails when an
+# entry no longer matches a finding, so a resync that moves or removes one of
+# these lines forces a new review. Never add an entry for AgentFleet content:
+# the AgentFleet history is scanned without this file.
+
+# Documentation: SHA-256 digests, token and issue identifiers (the tokens were
+# revoked), a secret reference id (UUID) and prose.
+doc/logs/2026-05-24-cli-api-parity-e2e-log.md:generic-api-key:34
+doc/logs/2026-05-24-cli-api-parity-e2e-log.md:generic-api-key:35
+doc/plans/chat-adapters/2026-09-08-chat-queue-and-webhook-repair.md:discord-api-token:3585
+doc/plans/chat-adapters/2026-09-08-chat-queue-and-webhook-repair.md:generic-api-key:6669
+doc/plans/chat-adapters/2026-09-08-github-private-attachment-authority.md:generic-api-key:107
+docs/deploy/secrets.md:generic-api-key:514
+
+# Code: a validation error message that quotes a PEM header.
+packages/plugins/sandbox-providers/exe-dev/src/plugin.ts:private-key:172
+
+# Smoke test: a deliberately wrong bearer key ("wrong-smoke-key").
+scripts/smoke/hermes-gateway-e2e.sh:curl-auth-header:610
+
+# Rust tests: PEM fixtures of the redaction of provider errors (the #[cfg(test)]
+# module of durable/state.rs), and a token-shaped value in the stderr fixture of
+# an ACPX sidecar transport test.
+packages/paperclip-runner/runner/crates/runner-core/src/durable/state.rs:private-key:3894
+packages/paperclip-runner/runner/crates/runner-core/src/durable/state.rs:private-key:3905
+packages/paperclip-runner/runner/crates/runner-core/src/durable/state.rs:private-key:3915
+packages/paperclip-runner/runner/crates/runner-core/src/durable/state.rs:private-key:3925
+packages/paperclip-runner/runner/crates/runner-core/tests/acpx_sidecar_transport.rs:generic-api-key:191
+
+# Test fixtures: PEM keys with a "fake" or "local-e2e-key" body, or a key
+# format sample truncated to five lines.
+packages/google-sheets-mcp-server/src/http.test.ts:private-key:26
+packages/google-sheets-mcp-server/src/server.test.ts:private-key:25
+packages/plugins/sandbox-providers/exe-dev/src/plugin.test.ts:private-key:171
+packages/plugins/sandbox-providers/exe-dev/src/plugin.test.ts:private-key:180
+packages/plugins/sandbox-providers/exe-dev/src/plugin.test.ts:private-key:247
+tests/e2e/chat-adapters-ui.spec.ts:private-key:23
+
+# Test fixtures: literal keys, secrets, JWTs and token prefixes that exercise
+# redaction, signing, secret storage and token display.
+packages/db/src/decision-queue-migrations.test.ts:generic-api-key:12
+packages/paperclip-runner/src/control-plane/durable-prp-control-plane.test.ts:generic-api-key:727
+packages/paperclip-runner/src/drivers/opencode/opencode-server-driver.test.ts:generic-api-key:57
+packages/paperclip-runner/src/live/runnerd-codex-transport.test.ts:generic-api-key:3934
+packages/paperclip-runner/src/tools/capability-semantic-tools.test.ts:generic-api-key:1841
+server/src/__tests__/company-artifacts-service.test.ts:generic-api-key:249
+server/src/__tests__/decisions-service.test.ts:generic-api-key:50
+server/src/__tests__/environment-custom-images-service.test.ts:generic-api-key:686
+server/src/__tests__/http-log-redaction.test.ts:generic-api-key:537
+server/src/__tests__/http-log-redaction.test.ts:generic-api-key:539
+server/src/__tests__/invite-accept-gateway-defaults.test.ts:generic-api-key:155
+server/src/__tests__/invite-accept-gateway-defaults.test.ts:generic-api-key:178
+server/src/__tests__/invite-accept-gateway-defaults.test.ts:generic-api-key:203
+server/src/__tests__/invite-accept-gateway-defaults.test.ts:generic-api-key:233
+server/src/__tests__/redact-sensitive.test.ts:generic-api-key:13
+server/src/__tests__/redaction.test.ts:jwt:102
+server/src/__tests__/redaction.test.ts:jwt:343
+server/src/__tests__/secrets-service.test.ts:generic-api-key:3439
+server/src/__tests__/secrets-service.test.ts:generic-api-key:3940
+server/src/__tests__/server-startup-feedback-export.test.ts:generic-api-key:419
+server/src/__tests__/server-startup-feedback-export.test.ts:generic-api-key:420
+server/src/__tests__/server-startup-feedback-export.test.ts:generic-api-key:725
+server/src/__tests__/server-startup-feedback-export.test.ts:generic-api-key:786
+server/src/__tests__/tool-gateway.test.ts:generic-api-key:3258
+server/src/services/__tests__/run-failure-report.test.ts:jwt:187
+ui/src/pages/apps/gateways/ConnectClientDialog.test.tsx:generic-api-key:75
+ui/src/pages/apps/gateways/gateway-helpers.test.ts:generic-api-key:114
+ui/src/pages/apps/gateways/panels/TokensPanel.test.tsx:generic-api-key:52

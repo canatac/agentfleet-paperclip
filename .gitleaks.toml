@@ -1,0 +1,12 @@
+# Secret scanning of the AgentFleet fork (AF-CI-001e, docs/agentfleet/CI.md).
+#
+# The default gitleaks rules stay active, with no global suppression: no
+# path, file type or rule (.env, apiKey, secretId, generic-api-key...) is
+# allowlisted. Upstream content that the default rules match but that holds
+# no secret is listed finding by finding in .gitleaksignore, with its reason;
+# scripts/agentfleet/check-secrets.sh keeps that list exact and proves that a
+# new secret is still reported.
+title = "agentfleet-paperclip"
+
+[extend]
+useDefault = true
