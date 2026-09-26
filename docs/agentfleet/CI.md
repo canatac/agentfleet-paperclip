@@ -34,6 +34,7 @@ runners GitHub :
 | `general-workspaces-a:1/2`, `2/2` | projets `@paperclipai/ui` et `paperclipai` (CLI), découpés par `--shard` de Vitest |
 | `general-workspaces-b` | les 12 autres projets de `nonServerProjects` (shared, db, adapter-utils, adaptateurs locaux, plugins…) |
 | `serialized:1/5` à `5/5` | suites de routes et d'autorisation, une invocation Vitest par fichier, `--pool=forks --isolate` |
+| `complement` | propre au fork (AF-CI-001g) : ce qu'aucun lot upstream ne sélectionne, recalculé à chaque run. Fichiers de test serveur (`include` de `server/vitest.config.ts`) hors des sélections `general-server` et `serialized`, un fichier par invocation `--pool=forks --isolate` ; projets du `vitest.config.ts` racine qui ne sont ni le serveur ni un projet `general-workspaces` |
 
 [`scripts/agentfleet/run-regression.mjs`](../../scripts/agentfleet/run-regression.mjs)
 exécute un lot :
@@ -83,15 +84,23 @@ Garde-fou de resynchronisation : le script épingle l'empreinte SHA-256 de
 `scripts/run-vitest-stable.mjs` et le texte des scripts `test:run:general` et
 `test:run:serialized` de `package.json`. Si une montée de version les modifie,
 tous les lots échouent jusqu'à ce que le script soit relu et l'empreinte mise à
-jour.
+jour. Le lot `complement` épingle aussi l'`include` de test de
+`server/vitest.config.ts`, et exige que les projets du `vitest.config.ts`
+racine restent une liste de répertoires.
 
-Hors de ces lots, suivis à part :
+Contenu du lot `complement` au 26/09/2026 : 3 fichiers serveur
+(`server/src/routes/setup-token-route.test.ts`,
+`server/src/services/openrouter-models.test.ts`, écartés par le motif de
+routes upstream hors de `__tests__`, et
+`server/scripts/verify-runner-vendor-dependencies.test.mjs`) et 5 projets
+d'adaptateurs absents de `nonServerProjects` (`cursor-cloud`, `cursor-local`,
+`gemini-local`, `kimi-local`, `pi-local`). Il a révélé un test `cursor-local`
+en échec upstream depuis le 20/06/2026, corrigé dans le test
+([paperclip-fleet#83](https://github.com/canatac/paperclip-fleet/issues/83)).
 
-- vérification du Paperclip Runner (`check:all`, tests Rust) :
-  [paperclip-fleet#71](https://github.com/canatac/paperclip-fleet/issues/71) ;
-- tests qu'aucun lot upstream n'exécute (2 fichiers serveur hors sélection,
-  5 projets d'adaptateurs absents de `nonServerProjects`) :
-  [paperclip-fleet#72](https://github.com/canatac/paperclip-fleet/issues/72).
+Hors de ces lots, suivi à part : vérification du Paperclip Runner
+(`check:all`, tests Rust),
+[paperclip-fleet#71](https://github.com/canatac/paperclip-fleet/issues/71).
 
 ## Lint et format
 

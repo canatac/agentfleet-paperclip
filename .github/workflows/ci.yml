@@ -169,9 +169,10 @@ jobs:
           done
 
   # The upstream regression suites (docs/agentfleet/CI.md), in the lots of the
-  # upstream PR workflow. scripts/run-vitest-stable.mjs selects the suites of
-  # each lot; scripts/agentfleet/run-regression.mjs runs them and fails on any
-  # failed, skipped or todo test outside the exceptions approved in
+  # upstream PR workflow, plus the complement lot of what none of them selects.
+  # scripts/run-vitest-stable.mjs selects the suites of each lot;
+  # scripts/agentfleet/run-regression.mjs runs them and fails on any failed,
+  # skipped or todo test outside the exceptions approved in
   # scripts/agentfleet/regression-policy.json.
   regression-lot:
     name: regression (${{ matrix.lot }})
@@ -194,6 +195,7 @@ jobs:
           - serialized:3/5
           - serialized:4/5
           - serialized:5/5
+          - complement
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
