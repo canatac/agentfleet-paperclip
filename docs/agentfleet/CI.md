@@ -59,9 +59,35 @@ Contre-épreuves locales (26/09/2026) : une entrée périmée, un secret commit�
 dans un nouveau fichier, puis ce même secret supprimé de l'arbre mais resté
 dans l'historique AgentFleet font chacun échouer le job, à l'étape attendue.
 
-L'audit des dépendances et le contrôle des licences suivent dans
-[paperclip-fleet#73](https://github.com/canatac/paperclip-fleet/issues/73) et
-[paperclip-fleet#74](https://github.com/canatac/paperclip-fleet/issues/74).
+### Licences (AF-CI-001i)
+
+Décision de l'opérateur du 26/09/2026
+([paperclip-fleet#74](https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747)).
+Le job `licenses` lance
+[`scripts/agentfleet/verify-licenses.mjs`](../../scripts/agentfleet/verify-licenses.mjs)
+après une installation figée : `pnpm licenses list --prod`, puis comparaison
+avec [`scripts/agentfleet/license-policy.json`](../../scripts/agentfleet/license-policy.json).
+
+- **Acceptées** : MIT, Apache-2.0, ISC, BSD-2-Clause, BSD-3-Clause, BSD, 0BSD,
+  MIT-0, CC0-1.0, Unlicense, BlueOak-1.0.0, Python-2.0, MPL-2.0,
+  LGPL-3.0-or-later (identifiants comparés sans casse ; une expression passe si
+  chaque terme `AND`, ou une alternative `OR`, est acceptée).
+- **Refusées** : toute autre licence, GPL, AGPL et SSPL comprises.
+- **Exceptions revues** (nom, version et licence déclarée) : 10 paquets au
+  26/09/2026. Le SDK Claude Agent et le SDK Cursor sont **propriétaires**
+  (« All rights reserved », conditions de leur éditeur) et viennent des
+  adaptateurs `claude-local` et `cursor-cloud`. `khroma` est MIT sans champ
+  `license`. Les quatre binaires `opencode-linux-x64*` n'ont pas de
+  métadonnées de licence ; leur paquet parent `opencode-ai` est MIT.
+- Une exception qui ne correspond plus à un paquet installé (version changée,
+  paquet retiré) fait échouer le job : elle doit être revue de nouveau.
+
+Contre-épreuves locales : une exception retirée, une exception sans paquet et
+MPL-2.0 retirée de la liste font chacune échouer le job, sur les paquets
+attendus.
+
+L'audit des dépendances suit dans
+[paperclip-fleet#73](https://github.com/canatac/paperclip-fleet/issues/73).
 
 ## Checks obligatoires sur `main`
 
@@ -72,6 +98,7 @@ L'audit des dépendances et le contrôle des licences suivent dans
 | `source-integrity`, `typecheck` | AF-CI-001b |
 | `agentfleet-tests` | AF-CI-001c |
 | `secrets` | AF-CI-001e |
+| `licenses` | AF-CI-001i |
 | régression upstream | AF-CI-001d |
 
 ## Exécution locale
@@ -89,4 +116,10 @@ Scan de secrets, avec gitleaks 8.30.1 :
 
 ```sh
 scripts/agentfleet/check-secrets.sh /chemin/vers/gitleaks
+```
+
+Licences (après `pnpm install --frozen-lockfile`) :
+
+```sh
+node scripts/agentfleet/verify-licenses.mjs
 ```

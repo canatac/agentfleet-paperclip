@@ -1,0 +1,91 @@
+{
+  "$comment": "AgentFleet license policy (AF-CI-001i, docs/agentfleet/CI.md), operator decision of 2026-09-26 (paperclip-fleet#74). allowed: SPDX identifiers accepted for production dependencies (compared case-insensitively; an expression passes when every AND term, or one OR alternative, is allowed). exceptions: packages accepted by name, version and reported license after review. Any other license, GPL, AGPL and SSPL included, fails the check; an exception that no longer matches an installed package fails it too.",
+  "allowed": [
+    "MIT",
+    "Apache-2.0",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSD",
+    "0BSD",
+    "MIT-0",
+    "CC0-1.0",
+    "Unlicense",
+    "BlueOak-1.0.0",
+    "Python-2.0",
+    "MPL-2.0",
+    "LGPL-3.0-or-later"
+  ],
+  "exceptions": [
+    {
+      "name": "@anthropic-ai/claude-agent-sdk",
+      "version": "0.3.263",
+      "license": "Unknown",
+      "review": "proprietary: LICENSE.md reads '© Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements' of Claude Code; pulled in by the claude-local adapter",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    },
+    {
+      "name": "@anthropic-ai/claude-agent-sdk-linux-x64",
+      "version": "0.3.263",
+      "license": "Unknown",
+      "review": "proprietary: LICENSE.md reads '© Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements' of Claude Code; pulled in by the claude-local adapter",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    },
+    {
+      "name": "@anthropic-ai/claude-agent-sdk-linux-x64-musl",
+      "version": "0.3.263",
+      "license": "Unknown",
+      "review": "proprietary: LICENSE.md reads '© Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements' of Claude Code; pulled in by the claude-local adapter",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    },
+    {
+      "name": "@cursor/sdk",
+      "version": "1.0.28",
+      "license": "Unknown",
+      "review": "proprietary: LICENSE.md reads '© Anysphere Inc. All rights reserved. Use is subject to Cursor's Terms of Service'; pulled in by the cursor-cloud adapter",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    },
+    {
+      "name": "@cursor/sdk-linux-x64",
+      "version": "1.0.28",
+      "license": "SEE LICENSE IN LICENSE.md",
+      "review": "proprietary: LICENSE.md reads '© Anysphere Inc. All rights reserved. Use is subject to Cursor's Terms of Service'; pulled in by the cursor-cloud adapter",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    },
+    {
+      "name": "khroma",
+      "version": "2.1.0",
+      "license": "Unknown",
+      "review": "MIT: the license file is the MIT License; package.json declares no license field",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    },
+    {
+      "name": "opencode-linux-x64",
+      "version": "1.18.29",
+      "license": "Unknown",
+      "review": "platform binary of opencode-ai (MIT, same version); the binary package declares no license and ships no license file; pulled in by the paperclip-runner package",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    },
+    {
+      "name": "opencode-linux-x64-baseline",
+      "version": "1.18.29",
+      "license": "Unknown",
+      "review": "platform binary of opencode-ai (MIT, same version); the binary package declares no license and ships no license file; pulled in by the paperclip-runner package",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    },
+    {
+      "name": "opencode-linux-x64-baseline-musl",
+      "version": "1.18.29",
+      "license": "Unknown",
+      "review": "platform binary of opencode-ai (MIT, same version); the binary package declares no license and ships no license file; pulled in by the paperclip-runner package",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    },
+    {
+      "name": "opencode-linux-x64-musl",
+      "version": "1.18.29",
+      "license": "Unknown",
+      "review": "platform binary of opencode-ai (MIT, same version); the binary package declares no license and ships no license file; pulled in by the paperclip-runner package",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747"
+    }
+  ]
+}
