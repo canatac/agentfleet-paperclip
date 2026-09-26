@@ -132,9 +132,21 @@ Contre-épreuves locales (26/09/2026) : une entrée périmée, un secret commit�
 dans un nouveau fichier, puis ce même secret supprimé de l'arbre mais resté
 dans l'historique AgentFleet font chacun échouer le job, à l'étape attendue.
 
-L'audit des dépendances et le contrôle des licences suivent dans
-[paperclip-fleet#73](https://github.com/canatac/paperclip-fleet/issues/73) et
-[paperclip-fleet#74](https://github.com/canatac/paperclip-fleet/issues/74).
+### Dépendances (AF-CI-001h)
+
+Décision de l'opérateur du 26/09/2026
+([paperclip-fleet#73](https://github.com/canatac/paperclip-fleet/issues/73#issuecomment-5845190403)) :
+bloquer les vulnérabilités nouvelles, afficher l'audit complet sans bloquer.
+
+| Workflow, job | Contrôles |
+|---|---|
+| `dependency-review.yml`, `dependency-review` | sur chaque PR, `actions/dependency-review-action` (v5.0.0, épinglée par SHA) : échec si la PR ajoute une dépendance avec une vulnérabilité connue haute ou critique. Les licences sont contrôlées sur tout l'inventaire par ailleurs ([paperclip-fleet#74](https://github.com/canatac/paperclip-fleet/issues/74)) |
+| `security.yml`, `dependency-audit` | [`scripts/agentfleet/report-audit.mjs`](../../scripts/agentfleet/report-audit.mjs) : `pnpm audit --prod` sur le lockfile, nombre de vulnérabilités par sévérité et détail des hautes et critiques dans le résumé du job, rapport JSON conservé 14 jours. N'échoue que si l'audit ne peut pas tourner |
+
+État au 26/09/2026 : 0 critique, 14 hautes. `multer` 2.2.0 (serveur, 3 avis)
+est à corriger dans le fork par un override pnpm, dans une PR dédiée ; les
+autres, via des adaptateurs autres que Hermes et l'UI, attendent une
+resynchronisation upstream.
 
 ## Checks obligatoires sur `main`
 
@@ -146,6 +158,7 @@ L'audit des dépendances et le contrôle des licences suivent dans
 | `agentfleet-tests` | AF-CI-001c |
 | `regression` | AF-CI-001d |
 | `secrets` | AF-CI-001e |
+| `dependency-review` | AF-CI-001h |
 
 ## Exécution locale
 
@@ -170,4 +183,10 @@ Scan de secrets, avec gitleaks 8.30.1 :
 
 ```sh
 scripts/agentfleet/check-secrets.sh /chemin/vers/gitleaks
+```
+
+Audit des dépendances (rapport, sans échec sur les vulnérabilités) :
+
+```sh
+node scripts/agentfleet/report-audit.mjs
 ```
