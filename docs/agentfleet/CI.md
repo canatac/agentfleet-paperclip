@@ -1,6 +1,6 @@
 # CI du fork
 
-Spécification §7.1 et §7.2 ; tickets AF-CI-001a à e
+Spécification §7.1, §7.2 et §14 ; tickets AF-CI-001a à i
 ([paperclip-fleet#19](https://github.com/canatac/paperclip-fleet/issues/19)).
 Les workflows de l'upstream sont retirés (voir [`README.md`](README.md)) ; le
 fork n'exécute que les siens, sur runners GitHub, avec des actions épinglées
@@ -83,6 +83,41 @@ n'est ni installé ni configuré. La CI ne l'invente pas. Le contrôle le plus
 proche est le typecheck strict. Ajouter un linter serait un changement propre
 au fork, à décider.
 
+## `security.yml` (AF-CI-001e)
+
+Même déclenchement que `ci.yml`.
+
+| Job | Contrôles |
+|---|---|
+| `secrets` | [`scripts/agentfleet/check-secrets.sh`](../../scripts/agentfleet/check-secrets.sh) avec gitleaks 8.30.1 (version épinglée, empreinte SHA-256 vérifiée), en quatre étapes décrites ci-dessous |
+
+1. **Arbre suivi à `HEAD`** : règles par défaut de gitleaks
+   ([`.gitleaks.toml`](../../.gitleaks.toml)), sans aucune suppression
+   globale (ni chemin, ni type de fichier, ni règle). Les correspondances
+   relues du contenu upstream qui ne contiennent aucun secret sont listées une
+   par une dans [`.gitleaksignore`](../../.gitleaksignore) (fichier, règle,
+   ligne), regroupées et commentées : fixtures de test, documentation
+   (empreintes, identifiants de jetons révoqués), un message d'erreur, une clé
+   volontairement fausse d'un smoke test.
+2. **Liste exacte** : sans `.gitleaksignore`, les correspondances sont
+   exactement ses entrées. Une entrée qui ne correspond plus à rien (ligne
+   déplacée ou supprimée par une resynchronisation) fait échouer le job et
+   impose une nouvelle relecture.
+3. **Témoin** : un jeton GitHub et une clé privée factices, générés à
+   l'exécution dans un nouveau fichier, doivent être signalés alors que
+   `.gitleaksignore` est actif.
+4. **Historique AgentFleet** : chaque commit depuis le commit upstream de base
+   (`upstream-version.json`), scanné depuis un clone miroir pour qu'aucune
+   entrée de `.gitleaksignore` ne s'y applique.
+
+Contre-épreuves locales (26/09/2026) : une entrée périmée, un secret commité
+dans un nouveau fichier, puis ce même secret supprimé de l'arbre mais resté
+dans l'historique AgentFleet font chacun échouer le job, à l'étape attendue.
+
+L'audit des dépendances et le contrôle des licences suivent dans
+[paperclip-fleet#73](https://github.com/canatac/paperclip-fleet/issues/73) et
+[paperclip-fleet#74](https://github.com/canatac/paperclip-fleet/issues/74).
+
 ## Checks obligatoires sur `main`
 
 À déclarer dans le ruleset `main` du fork, au fil des tickets :
@@ -92,7 +127,7 @@ au fork, à décider.
 | `source-integrity`, `typecheck` | AF-CI-001b |
 | `agentfleet-tests` | AF-CI-001c |
 | `regression` | AF-CI-001d |
-| sécurité | AF-CI-001e |
+| `secrets` | AF-CI-001e |
 
 ## Exécution locale
 
@@ -111,4 +146,10 @@ refuse root) :
 ```sh
 node scripts/agentfleet/run-regression.mjs --lot serialized:1/5 --plan
 node scripts/agentfleet/run-regression.mjs --lot serialized:1/5 --report-dir /tmp/regression
+```
+
+Scan de secrets, avec gitleaks 8.30.1 :
+
+```sh
+scripts/agentfleet/check-secrets.sh /chemin/vers/gitleaks
 ```
