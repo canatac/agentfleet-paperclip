@@ -1,0 +1,245 @@
+{
+  "$comment": "AgentFleet regression policy (AF-CI-001d, docs/agentfleet/CI.md). excludedFiles: upstream test files not run in the fork, each with its reason and the decision that approved it; they are also listed in docs/agentfleet/README.md. allowedSkips: skipped or todo tests accepted as exceptions, each with its family, reason and approving decision, matched by file and exact full name, or by file and full-name prefix with the exact count expected. In a lot that runs the file, an exception that does not match exactly fails the lot. Any other skipped, todo or failed test fails the lot.",
+  "excludedFiles": [
+    {
+      "file": "server/src/__tests__/cloud-image-bundled-plugins.test.ts",
+      "reason": "reads .github/workflows/docker.yml and docker-cloud.yml, upstream workflows removed from the fork",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/63"
+    },
+    {
+      "file": "server/src/__tests__/cloud-image-sentry.test.ts",
+      "reason": "reads .github/workflows/docker.yml or docker-cloud.yml, upstream workflows removed from the fork",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "file": "server/src/__tests__/container-init-reaping.test.ts",
+      "reason": "reads .github/workflows/docker.yml or docker-cloud.yml, upstream workflows removed from the fork",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "file": "server/src/__tests__/docker-build-stamp.test.ts",
+      "reason": "reads .github/workflows/docker.yml or docker-cloud.yml, upstream workflows removed from the fork",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    }
+  ],
+  "allowedSkips": [
+    {
+      "family": "platform",
+      "file": "packages/adapter-utils/src/local-process-sandbox.test.ts",
+      "fullName": "local process sandbox rejects sandbox scopes on unsupported hosts",
+      "reason": "runs only on a non-Linux host; the CI runners are Linux",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "bwrap",
+      "file": "packages/adapter-utils/src/local-process-sandbox.test.ts",
+      "fullName": "local process sandbox prevents reads outside the workspace while allowing workspace writes",
+      "reason": "opt-in bubblewrap test (PAPERCLIP_TEST_BWRAP); the workspace sandbox scope fails on usr-merged hosts such as Ubuntu 24.04 (upstream bug, paperclip-fleet#77) and AgentFleet does not use this sandbox",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5847816395"
+    },
+    {
+      "family": "bwrap",
+      "file": "packages/adapter-utils/src/local-process-sandbox.test.ts",
+      "fullName": "local process sandbox runs the adapter-utils TypeScript build inside the confined workspace",
+      "reason": "opt-in bubblewrap test (PAPERCLIP_TEST_BWRAP); the workspace sandbox scope fails on usr-merged hosts such as Ubuntu 24.04 (upstream bug, paperclip-fleet#77) and AgentFleet does not use this sandbox",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5847816395"
+    },
+    {
+      "family": "bwrap",
+      "file": "packages/adapter-utils/src/local-process-sandbox.test.ts",
+      "fullName": "local process sandbox denies direct network egress",
+      "reason": "opt-in bubblewrap test (PAPERCLIP_TEST_BWRAP); the workspace sandbox scope fails on usr-merged hosts such as Ubuntu 24.04 (upstream bug, paperclip-fleet#77) and AgentFleet does not use this sandbox",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5847816395"
+    },
+    {
+      "family": "bwrap",
+      "file": "packages/adapter-utils/src/local-process-sandbox.test.ts",
+      "fullName": "local process sandbox allows only configured network targets through the proxy bridge",
+      "reason": "opt-in bubblewrap test (PAPERCLIP_TEST_BWRAP); the workspace sandbox scope fails on usr-merged hosts such as Ubuntu 24.04 (upstream bug, paperclip-fleet#77) and AgentFleet does not use this sandbox",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5847816395"
+    },
+    {
+      "family": "platform",
+      "file": "server/src/__tests__/codex-local-adapter-environment.test.ts",
+      "fullName": "codex_local environment diagnostics runs the hello probe when Codex is available via a Windows .cmd wrapper",
+      "reason": "runs only on a non-Linux host; the CI runners are Linux",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "live",
+      "file": "packages/adapters/claude-local/src/server/setup-token-characterization.test.ts",
+      "fullName": "claude setup-token live characterization reads the real sign-in prompt contract and records the Claude Code version",
+      "reason": "needs a live external service or its credentials; the fork CI holds no secret and makes no live call",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "live",
+      "file": "packages/plugins/sandbox-providers/daytona/src/duplex-command-stream.live.test.ts",
+      "fullName": "Daytona duplex channel (live) runs the duplex channel and an ordinary command on one live sandbox",
+      "reason": "needs a live external service or its credentials; the fork CI holds no secret and makes no live call",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "live",
+      "file": "packages/plugins/sandbox-providers/daytona/src/duplex-command-stream.live.test.ts",
+      "fullName": "Daytona duplex channel (live) delivers host input sent after startup with no echo and no frame corruption",
+      "reason": "needs a live external service or its credentials; the fork CI holds no secret and makes no live call",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "live",
+      "file": "packages/plugins/sandbox-providers/daytona/src/duplex-command-stream.live.test.ts",
+      "fullName": "Daytona duplex channel (live) leaves no leaked provider session after channel close",
+      "reason": "needs a live external service or its credentials; the fork CI holds no secret and makes no live call",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "live",
+      "file": "packages/plugins/sandbox-providers/daytona/src/duplex-command-stream.live.test.ts",
+      "fullName": "Daytona duplex channel (live) serves repeated channel round trips with no idle polling and no per-request session growth",
+      "reason": "needs a live external service or its credentials; the fork CI holds no secret and makes no live call",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "live",
+      "file": "packages/plugins/sandbox-providers/daytona/src/duplex-command-stream.live.test.ts",
+      "fullName": "Daytona duplex channel (live) leaves no leaked session and keeps the sandbox usable after a forced mid-flight disconnect",
+      "reason": "needs a live external service or its credentials; the fork CI holds no secret and makes no live call",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "live",
+      "file": "packages/plugins/sandbox-providers/daytona/src/duplex-command-stream.live.test.ts",
+      "fullName": "Daytona duplex channel (live) test_live_daytona_run_uses_http2_v1_end_to_end",
+      "reason": "needs a live external service or its credentials; the fork CI holds no secret and makes no live call",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "live",
+      "file": "server/src/__tests__/workspace-runtime-https-live-exercise.test.ts",
+      "fullName": "PAP-17158 live HTTPS backfill exercise upgrades a pre-existing HTTP workspace in place to a browser-trusted HTTPS URL",
+      "reason": "needs a live external service or its credentials; the fork CI holds no secret and makes no live call",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "fixture",
+      "file": "server/src/services/native-runtime/native-warm-transition-restart.integration.test.ts",
+      "fullNamePrefix": "generated warm transition → real restart classifier → guarded server admission ",
+      "count": 35,
+      "reason": "needs fixtures captured by hand from the private runner (PAPERCLIP_WARM_TRANSITION_FIXTURE_DIRECTORY) and a dedicated database",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "runnerd",
+      "file": "server/src/services/native-runtime/native-session-resume.test.ts",
+      "fullName": "keeps actual normalized driver events separate from raw maintenance receipts",
+      "reason": "needs the Rust runnerd binary, which the CI does not build yet (temporary, paperclip-fleet#71)",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866",
+      "until": "https://github.com/canatac/paperclip-fleet/issues/71"
+    },
+    {
+      "family": "runnerd",
+      "file": "server/src/services/native-runtime/native-session-resume.test.ts",
+      "fullName": "archives a damaged prior epoch before completing guarded same-task replacement with real runnerd",
+      "reason": "needs the Rust runnerd binary, which the CI does not build yet (temporary, paperclip-fleet#71)",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866",
+      "until": "https://github.com/canatac/paperclip-fleet/issues/71"
+    },
+    {
+      "family": "runnerd",
+      "file": "server/src/services/native-runtime/runner-api.integration.test.ts",
+      "fullName": "runner API against real HTTP routes runs runnerd → PRP → authority → actual authenticated HTTP",
+      "reason": "needs the Rust runnerd binary, which the CI does not build yet (temporary, paperclip-fleet#71)",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866",
+      "until": "https://github.com/canatac/paperclip-fleet/issues/71"
+    },
+    {
+      "family": "runnerd",
+      "file": "server/src/services/native-runtime/native-runner-restart-recovery.integration.test.ts",
+      "fullName": "native runner restart recovery with real processes adopts one active runner across hot and hard controller restarts without duplicating steering",
+      "reason": "needs the Rust runnerd binary, which the CI does not build yet (temporary, paperclip-fleet#71)",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866",
+      "until": "https://github.com/canatac/paperclip-fleet/issues/71"
+    },
+    {
+      "family": "runnerd",
+      "file": "server/src/services/native-runtime/native-runner-restart-recovery.integration.test.ts",
+      "fullName": "native runner restart recovery with real processes hard-restarts a dead runner on the same run and provider session",
+      "reason": "needs the Rust runnerd binary, which the CI does not build yet (temporary, paperclip-fleet#71)",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866",
+      "until": "https://github.com/canatac/paperclip-fleet/issues/71"
+    },
+    {
+      "family": "runnerd",
+      "file": "server/src/services/native-runtime/native-runner-restart-recovery.integration.test.ts",
+      "fullName": "native runner restart recovery with real processes quarantines a pre-auth runner root and bootstraps the same run",
+      "reason": "needs the Rust runnerd binary, which the CI does not build yet (temporary, paperclip-fleet#71)",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866",
+      "until": "https://github.com/canatac/paperclip-fleet/issues/71"
+    },
+    {
+      "family": "runnerd",
+      "file": "server/src/services/native-runtime/paperclip-runner-real-server.integration.test.ts",
+      "fullName": "paperclip-runner real server vertical slice runs Rust runnerd through Paperclip PRP and reads the real bound task",
+      "reason": "needs the Rust runnerd binary, which the CI does not build yet (temporary, paperclip-fleet#71)",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866",
+      "until": "https://github.com/canatac/paperclip-fleet/issues/71"
+    },
+    {
+      "family": "sdk",
+      "file": "server/src/__tests__/instrumentation.test.ts",
+      "fullName": "recordProviderPluginSpan native duration opens the span at the true start time and ends it at the true end time",
+      "reason": "needs an optional peer SDK that the lockfile does not install",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "sdk",
+      "file": "server/src/__tests__/instrumentation.test.ts",
+      "fullName": "recordProviderPluginSpan native duration opens and ends the span now when the timestamp pair is absent",
+      "reason": "needs an optional peer SDK that the lockfile does not install",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "sdk",
+      "file": "server/src/__tests__/sentry.test.ts",
+      "fullName": "captured event shape against the real @sentry/node SDK a server event captured after a console.error call carries no console breadcrumb",
+      "reason": "needs an optional peer SDK that the lockfile does not install",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "sdk",
+      "file": "server/src/__tests__/sentry.test.ts",
+      "fullName": "captured event shape against the real @sentry/node SDK a server event carries no stack-frame source context",
+      "reason": "needs an optional peer SDK that the lockfile does not install",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "sdk",
+      "file": "server/src/__tests__/sentry.test.ts",
+      "fullName": "captured event shape against the real @sentry/node SDK a server event carries no outbound HTTP breadcrumb",
+      "reason": "needs an optional peer SDK that the lockfile does not install",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "sdk",
+      "file": "server/src/__tests__/sentry.test.ts",
+      "fullName": "captured event shape against the real @sentry/node SDK a server event captured inside a real HTTP request handler carries no request field",
+      "reason": "needs an optional peer SDK that the lockfile does not install",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "bench",
+      "file": "server/src/__tests__/task-search-quality.test.ts",
+      "fullName": "task search relevance rubric (real PostgreSQL) measures 10k tasks / 30k comments",
+      "reason": "opt-in benchmark",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    },
+    {
+      "family": "bench",
+      "file": "server/src/__tests__/company-portability-import-batching.test.ts",
+      "fullName": "company import batches inserts benchmark: large import stays in the tens of statements, not thousands",
+      "reason": "opt-in benchmark",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
+    }
+  ]
+}

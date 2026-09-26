@@ -1,0 +1,30 @@
+# Dependency review of the AgentFleet fork (specification §7.2 "security",
+# operator decision in paperclip-fleet#73): a pull request fails when it
+# adds a dependency with a known high or critical vulnerability. The full
+# audit of the existing dependencies is reported, without blocking, by the
+# dependency-audit job of security.yml. Documented in docs/agentfleet/CI.md.
+name: dependency-review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: dependency-review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Licenses are checked on the whole inventory by the licenses job
+      # (paperclip-fleet#74), not only on the dependencies a PR changes.
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          license-check: false
