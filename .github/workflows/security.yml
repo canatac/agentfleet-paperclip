@@ -1,6 +1,6 @@
 # Security checks of the AgentFleet fork (specification §7.2 "security", §14):
 # the secret scan of the tracked tree and of the AgentFleet history, and the
-# audit report of the production dependencies.
+# audit report and the license check of the production dependencies.
 # GitHub-hosted runner, actions pinned by SHA, read-only token, no secret.
 # Documented in docs/agentfleet/CI.md.
 name: security
@@ -84,3 +84,30 @@ jobs:
           name: dependency-audit
           path: ${{ runner.temp }}/dependency-audit.json
           retention-days: 14
+
+  # Operator decision, paperclip-fleet#74: permissive licenses, MPL-2.0 and
+  # LGPL-3.0 accepted; any other license fails unless the package is a
+  # reviewed exception of scripts/agentfleet/license-policy.json.
+  licenses:
+    name: licenses
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Pinned pnpm (packageManager)
+        run: corepack enable pnpm
+
+      # pnpm reads the licenses from the installed packages.
+      - name: Install from the lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Licenses of the production dependencies
+        run: node scripts/agentfleet/verify-licenses.mjs
