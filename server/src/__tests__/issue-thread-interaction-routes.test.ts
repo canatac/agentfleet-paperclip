@@ -260,11 +260,13 @@ function createIssue(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function loadAppModules() {
-  return Promise.all([
-    import("../routes/issues.js"),
-    import("../middleware/index.js"),
-  ]);
+async function loadAppModules() {
+  // One import at a time: two concurrent imports both apply the queued
+  // vi.doUnmock/vi.doMock calls, and one's unmock of ../services/index.js can
+  // land after the other's mock, loading the real services.
+  const routes = await import("../routes/issues.js");
+  const middleware = await import("../middleware/index.js");
+  return [routes, middleware] as const;
 }
 
 async function createApp(actor: Record<string, unknown> = {
