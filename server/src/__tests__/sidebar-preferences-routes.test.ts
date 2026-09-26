@@ -18,10 +18,11 @@ function registerModuleMocks() {
 }
 
 async function createApp(actor: Record<string, unknown>) {
-  const [{ sidebarPreferenceRoutes }, { errorHandler }] = await Promise.all([
-    import("../routes/sidebar-preferences.js"),
-    import("../middleware/index.js"),
-  ]);
+  // One import at a time: two concurrent imports both apply the queued
+  // vi.doUnmock/vi.doMock calls, and one's unmock of ../services/index.js can
+  // land after the other's mock, loading the real services.
+  const { sidebarPreferenceRoutes } = await import("../routes/sidebar-preferences.js");
+  const { errorHandler } = await import("../middleware/index.js");
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
