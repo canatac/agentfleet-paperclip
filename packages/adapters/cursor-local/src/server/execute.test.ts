@@ -276,7 +276,11 @@ printf '%s\\n' '{"type":"result","subtype":"success","session_id":"cursor-sessio
         // The fake agent exits without reading its prompt, so it gets no stdin
         // (writing to its closed pipe raises EPIPE).
         const isShell = input.command === "sh";
-        return runChildProcess(`cursor-fresh-lease-${runnerState.commands.length}`, isShell ? "/bin/sh" : input.command, input.args ?? [], {
+        const args = [...(input.args ?? [])];
+        // Never run the real installer, which downloads and runs a script from
+        // cursor.com: the mocked managed runtime setup writes the agent.
+        if (args[1] === SANDBOX_INSTALL_COMMAND) args[1] = "true";
+        return runChildProcess(`cursor-fresh-lease-${runnerState.commands.length}`, isShell ? "/bin/sh" : input.command, args, {
           cwd: remoteWorkspace,
           env: isShell ? { PATH: process.env.PATH ?? "/usr/bin:/bin" } : input.env ?? {},
           stdin: isShell ? input.stdin : undefined,
