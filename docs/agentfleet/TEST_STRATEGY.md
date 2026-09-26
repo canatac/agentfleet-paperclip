@@ -55,5 +55,6 @@ cd server && pnpm exec vitest run \
 
 Les tests serveur démarrent un PostgreSQL embarqué, qui refuse de s'initialiser
 quand le processus tourne en `root` : ils sont alors ignorés (`describe.skip`),
-pas en échec. Il faut les lancer sous un utilisateur non root ; la CI du fork
-(AF-CI-001) doit vérifier qu'aucun de ces tests n'est ignoré.
+pas en échec. Il faut les lancer sous un utilisateur non root. En CI, le job
+`agentfleet-tests` de `ci.yml` les exécute sous l'utilisateur `runner` et
+échoue si l'un d'eux est ignoré (voir [`CI.md`](CI.md)).

@@ -1,5 +1,5 @@
-# AgentFleet CI of the fork (specification §7.1, §7.2): source integrity and
-# strict typecheck. GitHub-hosted runners only, actions pinned by SHA,
+# AgentFleet CI of the fork (specification §7.1, §7.2): source integrity,
+# strict typecheck and the AgentFleet tests. GitHub-hosted runners only, actions pinned by SHA,
 # read-only token, no secret. Documented in docs/agentfleet/CI.md.
 name: ci
 
@@ -119,3 +119,50 @@ jobs:
       # it depends on (plugin SDK, runner vendor bundle, Rust cargo check).
       - name: Typecheck
         run: pnpm typecheck
+
+  # The external run id tests (docs/agentfleet/TEST_STRATEGY.md). The server
+  # suites start an embedded PostgreSQL, which only runs as a non-root user
+  # (the runner user); when it cannot start they are skipped, so the job
+  # fails on any skipped, todo or failed test.
+  agentfleet-tests:
+    name: agentfleet-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Pinned pnpm (packageManager)
+        run: corepack enable pnpm
+
+      - name: Install from the lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Hermes adapter unit tests
+        working-directory: packages/adapters/hermes
+        run: >-
+          pnpm exec vitest run
+          --reporter=default --reporter=json
+          --outputFile="$RUNNER_TEMP/vitest-hermes-adapter.json"
+
+      - name: External run id tests (heartbeat, fake Hermes gateway, PostgreSQL, API)
+        working-directory: server
+        run: >-
+          pnpm exec vitest run
+          src/__tests__/heartbeat-external-run-id
+          src/__tests__/hermes-gateway-external-run-id.integration.test.ts
+          --reporter=default --reporter=json
+          --outputFile="$RUNNER_TEMP/vitest-server-external-run-id.json"
+
+      - name: No skipped, todo or failed test
+        run: |
+          for report in "$RUNNER_TEMP"/vitest-*.json; do
+            jq -c '{report: input_filename, total: .numTotalTests, passed: .numPassedTests, failed: .numFailedTests, skipped: .numPendingTests, todo: .numTodoTests}' "$report"
+            jq -e '.numTotalTests > 0 and .numFailedTests == 0 and .numPendingTests == 0 and .numTodoTests == 0' "$report" >/dev/null
+          done
