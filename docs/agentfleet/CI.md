@@ -15,6 +15,7 @@ demande (`workflow_dispatch`, onglet Actions).
 |---|---|
 | `source-integrity` | pnpm de `packageManager` (9.15.4, via `corepack`) et Node 24 ; `pnpm install --frozen-lockfile` ; arbre inchangé après installation ; `upstream-version.json` (upstream officiel, SHA complet, date ISO 8601, commit ancêtre de `HEAD`) ; contrôles de l'upstream : politique de version Node, étape `deps` du Dockerfile, jetons interdits, pas de `git push` dans le code des adaptateurs, frontières de modules, ordre des migrations sur PR |
 | `typecheck` | `pnpm typecheck` : typecheck strict de chaque package du monorepo, avec les constructions dont il dépend (SDK de plugins, bundle du runner, `cargo check` du runner Rust) |
+| `agentfleet-tests` | tests de [`TEST_STRATEGY.md`](TEST_STRATEGY.md) : unitaires de l'adaptateur Hermes, tests serveur `heartbeat-external-run-id*` et test d'intégration du faux gateway Hermes (PostgreSQL embarqué, API). Rapport JSON de Vitest : le job échoue si un test est ignoré, `todo` ou en échec. Le PostgreSQL embarqué ne démarre pas en root et ses tests sont alors ignorés : le runner GitHub tourne sous l'utilisateur `runner` |
 
 `corepack` remplace `pnpm/action-setup` de l'upstream : pas d'action tierce
 à autoriser, et la version vient du champ `packageManager`.
@@ -34,7 +35,7 @@ au fork, à décider.
 | Check | Ticket |
 |---|---|
 | `source-integrity`, `typecheck` | AF-CI-001b |
-| tests AgentFleet (unitaires, intégration) | AF-CI-001c |
+| `agentfleet-tests` | AF-CI-001c |
 | sécurité | AF-CI-001e |
 | régression upstream | AF-CI-001d |
 
