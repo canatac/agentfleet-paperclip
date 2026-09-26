@@ -273,11 +273,13 @@ printf '%s\\n' '{"type":"result","subtype":"success","session_id":"cursor-sessio
         runnerState.commands.push(input.command);
         // The remote workspace is a local directory: run the sandbox shell
         // commands (workspace sync, sized chunked reads) for real, with stdin.
+        // The fake agent exits without reading its prompt, so it gets no stdin
+        // (writing to its closed pipe raises EPIPE).
         const isShell = input.command === "sh";
         return runChildProcess(`cursor-fresh-lease-${runnerState.commands.length}`, isShell ? "/bin/sh" : input.command, input.args ?? [], {
           cwd: remoteWorkspace,
           env: isShell ? { PATH: process.env.PATH ?? "/usr/bin:/bin" } : input.env ?? {},
-          stdin: input.stdin,
+          stdin: isShell ? input.stdin : undefined,
           timeoutSec: 30,
           graceSec: 5,
           onLog: async () => {},
