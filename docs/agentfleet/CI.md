@@ -55,11 +55,32 @@ les rapports JSON sont conservés 14 jours (artefacts `regression-reports-*`).
 porte :
 
 - `excludedFiles` : fichiers upstream non exécutés, chacun avec sa raison et la
-  décision qui l'approuve (aujourd'hui le seul fichier Vitest de la liste du
+  décision qui l'approuve (les 4 fichiers Vitest de la liste du
   [`README.md`](README.md)) ;
-- `allowedSkips` : tests ignorés acceptés comme exceptions, identifiés par
-  fichier et nom complet exact, chacun avec sa raison et la décision qui
-  l'approuve.
+- `allowedSkips` : tests ignorés acceptés comme exceptions, chacun avec sa
+  famille, sa raison et la décision qui l'approuve, identifiés par fichier et
+  nom complet exact, ou par fichier et préfixe de nom avec le nombre exact
+  attendu. Dans un lot qui exécute le fichier, une exception qui ne correspond
+  plus exactement fait échouer le lot : un test qui tourne de nouveau ou un
+  nouveau test ignoré impose de relire la politique.
+
+Exceptions approuvées par l'opérateur le 26/09/2026
+([décision](https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866)),
+60 tests :
+
+| Famille | Tests | Raison |
+|---|---|---|
+| `platform` | 2 | ne tourne que hors Linux (Windows, hôte non Linux) |
+| `live` | 8 | service externe réel ou ses identifiants (Daytona, CLI Claude, exercice HTTPS) : la CI n'a aucun secret et ne fait aucun appel live |
+| `fixture` | 35 | fixtures capturées à la main depuis le runner privé, avec une base dédiée |
+| `runnerd` | 7 | binaire Rust `runnerd` non construit en CI ; temporaire, jusqu'à [paperclip-fleet#71](https://github.com/canatac/paperclip-fleet/issues/71) |
+| `sdk` | 6 | SDK optionnels non installés par le lockfile (`@sentry/node`, OpenTelemetry SDK) |
+| `bench` | 2 | benchmarks optionnels |
+
+Les 4 tests du bac à sable `bubblewrap` (`local-process-sandbox.test.ts`) ne
+sont pas des exceptions : le lot `general-workspaces-b` installe `bwrap`,
+autorise les espaces de noms utilisateur non privilégiés (restreints par
+AppArmor sur Ubuntu 24.04) et les exécute.
 
 Garde-fou de resynchronisation : le script épingle l'empreinte SHA-256 de
 `scripts/run-vitest-stable.mjs` et le texte des scripts `test:run:general` et

@@ -106,7 +106,12 @@ function loadPolicy() {
     if (!existsSync(path.join(repoRoot, entry.file))) fail(`Excluded file no longer exists upstream, update the policy: ${entry.file}`);
   }
   for (const entry of allowedSkips) {
-    if (!entry.file || !entry.fullName || !entry.reason || !entry.decision) fail(`Allowed skip entry without file, fullName, reason or decision: ${JSON.stringify(entry)}`);
+    if (!entry.file || !entry.reason || !entry.decision) fail(`Allowed skip entry without file, reason or decision: ${JSON.stringify(entry)}`);
+    // Either one exact test, or every test of one file under a name prefix
+    // with the exact number expected.
+    const exact = typeof entry.fullName === "string" && entry.fullNamePrefix === undefined && entry.count === undefined;
+    const prefixed = typeof entry.fullNamePrefix === "string" && Number.isInteger(entry.count) && entry.count > 0 && entry.fullName === undefined;
+    if (!exact && !prefixed) fail(`Allowed skip entry needs fullName, or fullNamePrefix with count: ${JSON.stringify(entry)}`);
   }
   return { excludedFiles: new Set(excludedFiles.map((entry) => entry.file)), allowedSkips };
 }
@@ -177,8 +182,15 @@ function runVitest(args, reportFile) {
   return result.error ? `could not start Vitest: ${result.error.message}` : result.status;
 }
 
+function matchAllowedSkip(allowedSkips, file, fullName) {
+  return allowedSkips.findIndex((entry) =>
+    entry.file === file &&
+    (entry.fullName !== undefined ? entry.fullName === fullName : fullName.startsWith(entry.fullNamePrefix)));
+}
+
 function checkReports(results, allowedSkips) {
-  const allowed = new Map(allowedSkips.map((entry) => [`${entry.file}\n${entry.fullName}`, entry]));
+  const matches = allowedSkips.map(() => 0);
+  const ranFiles = new Set();
   const totals = { files: 0, tests: 0, passed: 0, failed: 0, skipped: 0, todo: 0 };
   const problems = [];
   const skips = [];
@@ -197,6 +209,7 @@ function checkReports(results, allowedSkips) {
     totals.todo += report.numTodoTests;
     for (const file of report.testResults) {
       const repoPath = path.relative(repoRoot, file.name).split(path.sep).join("/");
+      ranFiles.add(repoPath);
       if (file.status === "failed" && file.message) problems.push(`${repoPath}: ${file.message.split("\n")[0]}`);
       for (const test of file.assertionResults) {
         if (test.status === "passed") continue;
@@ -204,12 +217,23 @@ function checkReports(results, allowedSkips) {
           problems.push(`${repoPath}: failed: ${test.fullName}`);
           continue;
         }
-        const entry = allowed.get(`${repoPath}\n${test.fullName}`);
-        skips.push({ file: repoPath, fullName: test.fullName, status: test.status, allowed: Boolean(entry) });
-        if (!entry) problems.push(`${repoPath}: ${test.status} without an approved exception: ${test.fullName}`);
+        const index = matchAllowedSkip(allowedSkips, repoPath, test.fullName);
+        if (index >= 0) matches[index] += 1;
+        skips.push({ file: repoPath, fullName: test.fullName, status: test.status, allowed: index >= 0 });
+        if (index < 0) problems.push(`${repoPath}: ${test.status} without an approved exception: ${test.fullName}`);
       }
     }
   }
+  // The exceptions stay exact: one whose file ran in this lot must match
+  // exactly (a test that runs again, or a new skipped test under a prefix,
+  // fails the lot until the policy is reviewed).
+  allowedSkips.forEach((entry, index) => {
+    if (!ranFiles.has(entry.file)) return;
+    const expected = entry.count ?? 1;
+    if (matches[index] !== expected) {
+      problems.push(`${entry.file}: approved exception matched ${matches[index]} skipped tests, expected ${expected}: ${entry.fullName ?? `${entry.fullNamePrefix}*`}`);
+    }
+  });
   if (totals.tests === 0) problems.push("no test ran");
   return { totals, problems, skips };
 }

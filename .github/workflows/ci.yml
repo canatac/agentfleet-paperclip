@@ -210,6 +210,23 @@ jobs:
       - name: Install from the lockfile
         run: pnpm install --frozen-lockfile
 
+      # The four bubblewrap sandbox tests of adapter-utils run in this lot
+      # (operator decision, paperclip-fleet#66). Ubuntu 24.04 restricts
+      # unprivileged user namespaces through AppArmor; bubblewrap needs them.
+      - name: Bubblewrap for the sandbox tests
+        if: matrix.lot == 'general-workspaces-b'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends bubblewrap
+          if sysctl -n kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --ro-bind / / true
+          {
+            echo "PAPERCLIP_TEST_BWRAP=$(command -v bwrap)"
+            echo "PAPERCLIP_TEST_SANDBOX_BUILD=1"
+          } >> "$GITHUB_ENV"
+
       - name: Regression lot
         env:
           LOT: ${{ matrix.lot }}

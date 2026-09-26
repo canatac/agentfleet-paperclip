@@ -72,7 +72,15 @@ n'utilise pas. Constat du 25/09/2026, avec et sans les workflows : ils passent
 tous quand les workflows sont présents, et échouent sans eux. Ils sont exclus
 de la régression du fork
 ([paperclip-fleet#66](https://github.com/canatac/paperclip-fleet/issues/66)) ;
-aucun autre test ne l'est à ce titre.
+aucun autre test ne l'est à ce titre. Trois fichiers serveur, qui construisent
+le chemin des workflows avec `path.join`, avaient échappé à la mesure du
+25/09 : la régression sur runners GitHub les a révélés, et l'opérateur a
+décidé le 26/09 de les exclure pour la même raison
+([décision](https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866)).
+Leurs assertions sur le `Dockerfile` sont à reprendre dans le job d'image
+([paperclip-fleet#20](https://github.com/canatac/paperclip-fleet/issues/20)).
+Les fichiers Vitest de cette liste sont exclus par
+[`scripts/agentfleet/regression-policy.json`](../../scripts/agentfleet/regression-policy.json).
 
 | Fichier | Lanceur | Échecs sans les workflows |
 |---|---|---|
@@ -86,6 +94,9 @@ aucun autre test ne l'est à ce titre.
 | `scripts/preview-artifacts.test.mjs` | `node --test` | 6 / 19 |
 | `scripts/release-lib.test.mjs` | `node --test` | ne se charge plus (15 tests) |
 | `server/src/__tests__/cloud-image-bundled-plugins.test.ts` | Vitest (serveur) | ne se charge plus (5 tests) |
+| `server/src/__tests__/cloud-image-sentry.test.ts` | Vitest (serveur) | ne se charge plus (9 tests) ; ajouté le 26/09 |
+| `server/src/__tests__/container-init-reaping.test.ts` | Vitest (serveur) | ne se charge plus (8 tests) ; ajouté le 26/09 |
+| `server/src/__tests__/docker-build-stamp.test.ts` | Vitest (serveur) | ne se charge plus (5 tests) ; ajouté le 26/09 |
 | `tests/runner-e2e/codex-ci-sandbox.test.ts`, `daytona-image.test.ts`, `workflow-security.test.ts` | Vitest (`tests/runner-e2e`) | 11 / 18 |
 
 ## Resynchronisation avec l'upstream
