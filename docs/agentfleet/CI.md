@@ -65,8 +65,9 @@ porte :
   nouveau test ignoré impose de relire la politique.
 
 Exceptions approuvées par l'opérateur le 26/09/2026
-([décision](https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866)),
-60 tests :
+([décision](https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866),
+[révision pour bubblewrap](https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5847816395)),
+64 tests :
 
 | Famille | Tests | Raison |
 |---|---|---|
@@ -76,11 +77,7 @@ Exceptions approuvées par l'opérateur le 26/09/2026
 | `runnerd` | 7 | binaire Rust `runnerd` non construit en CI ; temporaire, jusqu'à [paperclip-fleet#71](https://github.com/canatac/paperclip-fleet/issues/71) |
 | `sdk` | 6 | SDK optionnels non installés par le lockfile (`@sentry/node`, OpenTelemetry SDK) |
 | `bench` | 2 | benchmarks optionnels |
-
-Les 4 tests du bac à sable `bubblewrap` (`local-process-sandbox.test.ts`) ne
-sont pas des exceptions : le lot `general-workspaces-b` installe `bwrap`,
-autorise les espaces de noms utilisateur non privilégiés (restreints par
-AppArmor sur Ubuntu 24.04) et les exécute.
+| `bwrap` | 4 | tests optionnels du bac à sable `bubblewrap` (`PAPERCLIP_TEST_BWRAP`). Activés en CI, ils ont révélé un bug upstream : la portée `workspace` échoue sur les hôtes « usr-merged » comme Ubuntu 24.04 ([paperclip-fleet#77](https://github.com/canatac/paperclip-fleet/issues/77)). AgentFleet n'utilise pas ce bac à sable, et le code applicatif n'est pas modifié |
 
 Garde-fou de resynchronisation : le script épingle l'empreinte SHA-256 de
 `scripts/run-vitest-stable.mjs` et le texte des scripts `test:run:general` et

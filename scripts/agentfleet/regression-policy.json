@@ -31,6 +31,34 @@
       "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5845189866"
     },
     {
+      "family": "bwrap",
+      "file": "packages/adapter-utils/src/local-process-sandbox.test.ts",
+      "fullName": "local process sandbox prevents reads outside the workspace while allowing workspace writes",
+      "reason": "opt-in bubblewrap test (PAPERCLIP_TEST_BWRAP); the workspace sandbox scope fails on usr-merged hosts such as Ubuntu 24.04 (upstream bug, paperclip-fleet#77) and AgentFleet does not use this sandbox",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5847816395"
+    },
+    {
+      "family": "bwrap",
+      "file": "packages/adapter-utils/src/local-process-sandbox.test.ts",
+      "fullName": "local process sandbox runs the adapter-utils TypeScript build inside the confined workspace",
+      "reason": "opt-in bubblewrap test (PAPERCLIP_TEST_BWRAP); the workspace sandbox scope fails on usr-merged hosts such as Ubuntu 24.04 (upstream bug, paperclip-fleet#77) and AgentFleet does not use this sandbox",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5847816395"
+    },
+    {
+      "family": "bwrap",
+      "file": "packages/adapter-utils/src/local-process-sandbox.test.ts",
+      "fullName": "local process sandbox denies direct network egress",
+      "reason": "opt-in bubblewrap test (PAPERCLIP_TEST_BWRAP); the workspace sandbox scope fails on usr-merged hosts such as Ubuntu 24.04 (upstream bug, paperclip-fleet#77) and AgentFleet does not use this sandbox",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5847816395"
+    },
+    {
+      "family": "bwrap",
+      "file": "packages/adapter-utils/src/local-process-sandbox.test.ts",
+      "fullName": "local process sandbox allows only configured network targets through the proxy bridge",
+      "reason": "opt-in bubblewrap test (PAPERCLIP_TEST_BWRAP); the workspace sandbox scope fails on usr-merged hosts such as Ubuntu 24.04 (upstream bug, paperclip-fleet#77) and AgentFleet does not use this sandbox",
+      "decision": "https://github.com/canatac/paperclip-fleet/issues/66#issuecomment-5847816395"
+    },
+    {
       "family": "platform",
       "file": "server/src/__tests__/codex-local-adapter-environment.test.ts",
       "fullName": "codex_local environment diagnostics runs the hello probe when Codex is available via a Windows .cmd wrapper",
