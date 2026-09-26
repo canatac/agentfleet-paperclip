@@ -132,9 +132,49 @@ Contre-épreuves locales (26/09/2026) : une entrée périmée, un secret commit�
 dans un nouveau fichier, puis ce même secret supprimé de l'arbre mais resté
 dans l'historique AgentFleet font chacun échouer le job, à l'étape attendue.
 
-L'audit des dépendances et le contrôle des licences suivent dans
-[paperclip-fleet#73](https://github.com/canatac/paperclip-fleet/issues/73) et
-[paperclip-fleet#74](https://github.com/canatac/paperclip-fleet/issues/74).
+### Dépendances (AF-CI-001h)
+
+Décision de l'opérateur du 26/09/2026
+([paperclip-fleet#73](https://github.com/canatac/paperclip-fleet/issues/73#issuecomment-5845190403)) :
+bloquer les vulnérabilités nouvelles, afficher l'audit complet sans bloquer.
+
+| Workflow, job | Contrôles |
+|---|---|
+| `dependency-review.yml`, `dependency-review` | sur chaque PR, `actions/dependency-review-action` (v5.0.0, épinglée par SHA) : échec si la PR ajoute une dépendance avec une vulnérabilité connue haute ou critique. Les licences sont contrôlées sur tout l'inventaire par ailleurs ([paperclip-fleet#74](https://github.com/canatac/paperclip-fleet/issues/74)) |
+| `security.yml`, `dependency-audit` | [`scripts/agentfleet/report-audit.mjs`](../../scripts/agentfleet/report-audit.mjs) : `pnpm audit --prod` sur le lockfile, nombre de vulnérabilités par sévérité et détail des hautes et critiques dans le résumé du job, rapport JSON conservé 14 jours. N'échoue que si l'audit ne peut pas tourner |
+
+État au 26/09/2026 : 0 critique, 11 hautes. `multer` (serveur, 3 avis) est
+corrigé dans le fork par un override pnpm (2.4.0,
+[paperclip-fleet#76](https://github.com/canatac/paperclip-fleet/issues/76)) ;
+les autres, via des adaptateurs autres que Hermes et l'UI, attendent une
+resynchronisation upstream.
+
+### Licences (AF-CI-001i)
+
+Décision de l'opérateur du 26/09/2026
+([paperclip-fleet#74](https://github.com/canatac/paperclip-fleet/issues/74#issuecomment-5845190747)).
+Le job `licenses` lance
+[`scripts/agentfleet/verify-licenses.mjs`](../../scripts/agentfleet/verify-licenses.mjs)
+après une installation figée : `pnpm licenses list --prod`, puis comparaison
+avec [`scripts/agentfleet/license-policy.json`](../../scripts/agentfleet/license-policy.json).
+
+- **Acceptées** : MIT, Apache-2.0, ISC, BSD-2-Clause, BSD-3-Clause, BSD, 0BSD,
+  MIT-0, CC0-1.0, Unlicense, BlueOak-1.0.0, Python-2.0, MPL-2.0,
+  LGPL-3.0-or-later (identifiants comparés sans casse ; une expression passe si
+  chaque terme `AND`, ou une alternative `OR`, est acceptée).
+- **Refusées** : toute autre licence, GPL, AGPL et SSPL comprises.
+- **Exceptions revues** (nom, version et licence déclarée) : 10 paquets au
+  26/09/2026. Le SDK Claude Agent et le SDK Cursor sont **propriétaires**
+  (« All rights reserved », conditions de leur éditeur) et viennent des
+  adaptateurs `claude-local` et `cursor-cloud`. `khroma` est MIT sans champ
+  `license`. Les quatre binaires `opencode-linux-x64*` n'ont pas de
+  métadonnées de licence ; leur paquet parent `opencode-ai` est MIT.
+- Une exception qui ne correspond plus à un paquet installé (version changée,
+  paquet retiré) fait échouer le job : elle doit être revue de nouveau.
+
+Contre-épreuves locales : une exception retirée, une exception sans paquet et
+MPL-2.0 retirée de la liste font chacune échouer le job, sur les paquets
+attendus.
 
 ## Checks obligatoires sur `main`
 
@@ -146,6 +186,8 @@ L'audit des dépendances et le contrôle des licences suivent dans
 | `agentfleet-tests` | AF-CI-001c |
 | `regression` | AF-CI-001d |
 | `secrets` | AF-CI-001e |
+| `dependency-review` | AF-CI-001h |
+| `licenses` | AF-CI-001i |
 
 ## Exécution locale
 
@@ -170,4 +212,16 @@ Scan de secrets, avec gitleaks 8.30.1 :
 
 ```sh
 scripts/agentfleet/check-secrets.sh /chemin/vers/gitleaks
+```
+
+Audit des dépendances (rapport, sans échec sur les vulnérabilités) :
+
+```sh
+node scripts/agentfleet/report-audit.mjs
+```
+
+Licences (après `pnpm install --frozen-lockfile`) :
+
+```sh
+node scripts/agentfleet/verify-licenses.mjs
 ```
