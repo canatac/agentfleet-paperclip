@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   withWorktreePortRegistryLock,
   withWorktreePortRegistryLockSync,
@@ -46,6 +46,15 @@ describe("worktree port registry lock", () => {
         ...owner,
         processIdentity: "unavailable-process-identity",
       })}\n`);
+      // The heartbeat worker still finds its token in the backup owner file and
+      // refreshes the lock from its own thread when the lock is taken, then every
+      // second. Age the lock right after an observed refresh, so the next one is
+      // a second away rather than racing this aging.
+      const mtimeMs = fs.statSync(lockPath).mtimeMs;
+      await vi.waitFor(() => expect(fs.statSync(lockPath).mtimeMs).not.toBe(mtimeMs), {
+        timeout: 3_000,
+        interval: 5,
+      });
       const oldTimestamp = new Date(Date.now() - 10_000);
       fs.utimesSync(lockPath, oldTimestamp, oldTimestamp);
       firstEntered.resolve();
