@@ -4359,7 +4359,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       },
     ];
 
-    await Promise.all(
+    const results = await Promise.allSettled(
       roots.map((root) => {
         const [owner, name] = root.channelId.split("/");
         return service.handleWebhook(
@@ -4392,6 +4392,33 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         );
       }),
     );
+    // One root mention can still hold the endpoint while the other's wake
+    // acceptance checks it with NOWAIT. As for concurrent duplicate receipts,
+    // the durable GitHub ingress must drain to the wake rather than requiring
+    // every synchronous call to win (canatac/paperclip-fleet#94).
+    for (const result of results) {
+      if (result.status === "rejected") {
+        expect(result.reason).toMatchObject({ cause: { code: "55P03" } });
+      }
+    }
+    if (results.some((result) => result.status === "rejected")) {
+      await vi.waitFor(
+        async () => {
+          await service.processPendingDeliveries();
+          const wakes = await db
+            .select({ status: chatActions.status })
+            .from(chatActions)
+            .where(
+              and(
+                eq(chatActions.endpointId, endpoint.id),
+                eq(chatActions.kind, "inbound_wakeup"),
+              ),
+            );
+          expect(wakes.map((wake) => wake.status)).toEqual(["processed"]);
+        },
+        { timeout: 10_000, interval: 250 },
+      );
+    }
 
     const resources = await service.listResources(endpoint.id);
     expect(resources.filter((resource) => resource.enabled)).toHaveLength(1);
