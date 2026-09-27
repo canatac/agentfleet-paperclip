@@ -161,6 +161,14 @@ jobs:
           --reporter=default --reporter=json
           --outputFile="$RUNNER_TEMP/vitest-server-external-run-id.json"
 
+      - name: Task session parameters containing NUL (AF-OBS-006, PostgreSQL)
+        working-directory: server
+        run: >-
+          pnpm exec vitest run
+          src/__tests__/heartbeat-task-session-nul.test.ts
+          --reporter=default --reporter=json
+          --outputFile="$RUNNER_TEMP/vitest-server-task-session-nul.json"
+
       - name: No skipped, todo or failed test
         run: |
           for report in "$RUNNER_TEMP"/vitest-*.json; do

@@ -6750,6 +6750,18 @@ function readConfiguredModelFromSessionParams(
   return readNonEmptyString(sessionParams?.[SESSION_CONFIGURED_MODEL_KEY]);
 }
 
+// PostgreSQL rejects U+0000 in jsonb, in keys and string values alike (AF-OBS-006).
+function jsonValueContainsNul(value: unknown): boolean {
+  if (typeof value === "string") return value.includes("\u0000");
+  if (Array.isArray(value)) return value.some(jsonValueContainsNul);
+  if (value !== null && typeof value === "object") {
+    return Object.entries(value).some(
+      ([key, entry]) => key.includes("\u0000") || jsonValueContainsNul(entry),
+    );
+  }
+  return false;
+}
+
 export function shouldResetTaskSessionForModelChange(input: {
   configuredModel: string | null;
   taskSessionParams: Record<string, unknown> | null | undefined;
@@ -12471,6 +12483,22 @@ export function heartbeatService(
     lastRunId: string | null;
     lastError: string | null;
   }) {
+    // Parameters containing NUL would fail the whole write (AF-OBS-006, operator
+    // decision in canatac/paperclip-fleet#68): refuse them and keep the previous
+    // task session, so the run keeps its outcome.
+    if (jsonValueContainsNul(input.sessionParamsJson)) {
+      logger.warn(
+        {
+          companyId: input.companyId,
+          agentId: input.agentId,
+          adapterType: input.adapterType,
+          taskKey: input.taskKey,
+          runId: input.lastRunId,
+        },
+        "task session parameters contain a NUL character; the task session is not recorded",
+      );
+      return null;
+    }
     return db.transaction(async (tx) => {
       const [issue] = await tx.select().from(issues).where(and(sql`${issues.id}::text = ${input.taskKey}`, eq(issues.companyId, input.companyId))).for("update");
       if (isConversation(issue)) {
