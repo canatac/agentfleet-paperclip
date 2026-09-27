@@ -24339,7 +24339,7 @@ export function heartbeatService(
           outcome = "failed";
         }
 
-        const nextSessionState = resolveNextSessionState({
+        const resolvedSessionState = resolveNextSessionState({
           adapterType: agent.adapterType,
           codec: sessionCodec,
           adapterResult,
@@ -24348,6 +24348,22 @@ export function heartbeatService(
           previousDisplayId: runtimeForAdapter.sessionDisplayId,
           previousLegacySessionId: runtimeForAdapter.sessionId,
         });
+        // PostgreSQL rejects U+0000 in the text columns that store the session
+        // id (AF-OBS-007, operator decision in canatac/paperclip-fleet#90): a
+        // session id or display id containing it is treated as absent, so the
+        // run records no session id and leaves no session to resume.
+        const sessionIdContainsNul =
+          jsonValueContainsNul(resolvedSessionState.displayId) ||
+          jsonValueContainsNul(resolvedSessionState.legacySessionId);
+        if (sessionIdContainsNul) {
+          logger.warn(
+            { runId: run.id, agentId: agent.id, adapterType: agent.adapterType },
+            "session id contains a NUL character; the session is treated as absent",
+          );
+        }
+        const nextSessionState = sessionIdContainsNul
+          ? { params: null, displayId: null, legacySessionId: null }
+          : resolvedSessionState;
         const rawUsage = normalizeUsageTotals(adapterResult.usage);
         const sessionUsageResolution = await resolveNormalizedUsageForSession({
           agentId: agent.id,
