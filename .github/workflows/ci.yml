@@ -168,6 +168,48 @@ jobs:
             jq -e '.numTotalTests > 0 and .numFailedTests == 0 and .numPendingTests == 0 and .numTodoTests == 0' "$report" >/dev/null
           done
 
+  # The Paperclip Runner verification of the upstream PR workflow
+  # (pr-trusted.yml, "Verify Paperclip Runner"): the production image embeds
+  # the runner binary (server/dist/vendor/paperclip-runner). rustup on the
+  # runner image installs the toolchain of
+  # packages/paperclip-runner/rust-toolchain.toml. The opt-in final-burst
+  # benchmark (fake provider) runs, so that no Vitest test is skipped;
+  # scripts/agentfleet/verify-runner-log.mjs fails on any skipped, todo or
+  # ignored test left in the log.
+  runner:
+    name: runner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Pinned pnpm (packageManager)
+        run: corepack enable pnpm
+
+      - name: Install from the lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Pinned Runner Rust toolchain
+        working-directory: packages/paperclip-runner
+        run: rustup show
+
+      - name: Verify Paperclip Runner (check:all)
+        env:
+          PAPERCLIP_FINAL_BURST_BENCHMARK: "1"
+        run: |
+          set -o pipefail
+          pnpm --filter @paperclipai/paperclip-runner check:all 2>&1 | tee "$RUNNER_TEMP/runner-check-all.log"
+
+      - name: No skipped, todo or ignored test
+        run: node scripts/agentfleet/verify-runner-log.mjs "$RUNNER_TEMP/runner-check-all.log"
+
   # The upstream regression suites (docs/agentfleet/CI.md), in the lots of the
   # upstream PR workflow, plus the complement lot of what none of them selects.
   # scripts/run-vitest-stable.mjs selects the suites of each lot;

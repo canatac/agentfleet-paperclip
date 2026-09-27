@@ -98,9 +98,33 @@ d'adaptateurs absents de `nonServerProjects` (`cursor-cloud`, `cursor-local`,
 en échec upstream depuis le 20/06/2026, corrigé dans le test
 ([paperclip-fleet#83](https://github.com/canatac/paperclip-fleet/issues/83)).
 
-Hors de ces lots, suivi à part : vérification du Paperclip Runner
-(`check:all`, tests Rust),
-[paperclip-fleet#71](https://github.com/canatac/paperclip-fleet/issues/71).
+## Paperclip Runner (AF-CI-001f)
+
+L'image de production embarque le runner : le build du serveur compile
+`paperclip-runnerd` (Rust, release) et le copie dans
+`server/dist/vendor/paperclip-runner/`. Le job `runner` reprend le job
+upstream « Verify Paperclip Runner » (`pr-trusted.yml`) :
+`pnpm --filter @paperclipai/paperclip-runner check:all`. Il couvre le noyau
+d'évaluation, le protocole, les tests TypeScript et Vitest du runner,
+`cargo test --release` sur l'espace de travail `runner/`, les parités de
+conformité et de rejeu, et `api-authority`. La toolchain vient de
+`packages/paperclip-runner/rust-toolchain.toml` (1.97.1), installée par le
+`rustup` de l'image du runner.
+
+Aucun test ignoré :
+
+- le banc d'essai opt-in `runnerd-final-output-burst` (3 cas, faux
+  fournisseur, assertions de justesse et non de temps) est activé par
+  `PAPERCLIP_FINAL_BURST_BENCHMARK=1` ;
+- [`scripts/agentfleet/verify-runner-log.mjs`](../../scripts/agentfleet/verify-runner-log.mjs)
+  relit le journal de `check:all` et échoue sur tout test Vitest ou node:test
+  ignoré, `todo` ou annulé, et sur tout test Rust `#[ignore]`, sauf les deux
+  points d'entrée de sous-processus de `codex_provider.rs`. Ce sont leurs
+  tests parents qui les exécutent, dans un processus enfant : chacun doit
+  apparaître une fois ignoré et une fois réussi.
+
+Pas de cache Rust : le build part de zéro à chaque run (environ 13 minutes
+en local sur 4 cœurs, dont 5 de compilation release).
 
 ## Lint et format
 
@@ -197,6 +221,7 @@ attendus.
 | `secrets` | AF-CI-001e |
 | `dependency-review` | AF-CI-001h |
 | `licenses` | AF-CI-001i |
+| `runner` | AF-CI-001f |
 
 ## Exécution locale
 
