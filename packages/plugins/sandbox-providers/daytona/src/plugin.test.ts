@@ -5010,8 +5010,12 @@ describe("daytona native file-sync hooks", () => {
       syncOutParams({ operationId: "out-active", sourcePath: `${REMOTE_DIR}/out.txt`, targetPath: outboundTarget }),
     );
     // Let both sync calls register on the activity gate and reach their hung
-    // transfer, so teardown sees a refCount of two.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // transfer, so teardown sees a refCount of two. Reaching the transfer takes
+    // host I/O, so wait for it rather than for one event-loop turn.
+    await vi.waitFor(() => {
+      expect(sandbox.fs.uploadFiles).toHaveBeenCalledTimes(1);
+      expect(sandbox.fs.downloadFiles).toHaveBeenCalledTimes(1);
+    });
 
     const destroyCall = plugin.definition.onEnvironmentDestroyLease?.({
       driverKey: "daytona",
