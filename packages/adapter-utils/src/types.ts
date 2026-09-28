@@ -127,6 +127,8 @@ export interface AdapterExecutionResult {
    */
   referencedProjectStagingFailures?: Array<{ projectId: string; error: string }>;
   summary?: string | null;
+  /** Diagnostic transcript: tool calls, reasoning, chunks. Never used as functional result. */
+  diagnosticTranscript?: string | null;
   clearSession?: boolean;
   question?: {
     prompt: string;
