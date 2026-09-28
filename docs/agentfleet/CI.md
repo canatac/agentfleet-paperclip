@@ -293,12 +293,70 @@ paquets (`SYFT_FILE_METADATA_SELECTION=none`), pour rester sous la limite de
 
 L'artefact `agentfleet-image-<commit>` conserve le rapport du smoke, les
 métadonnées de l'image et le SBOM : 14 jours pour une pull request, 90 jours
-pour `main`. Les tags `v*`, les notes de release et la première release
-relèvent d'AF-CI-003
-([paperclip-fleet#21](https://github.com/canatac/paperclip-fleet/issues/21)).
+pour `main`. Les tags `v*` et les notes de release relèvent de `release.yml`
+(section suivante).
 
 Les jobs de ce workflow ne sont pas des checks obligatoires : `verify-image`
 ne tourne que si une pull request touche l'image.
+
+## `release.yml` (AF-CI-003a)
+
+Une release du fork ne construit rien. `release-image.yml` a déjà publié et
+attesté l'image de chaque commit de `main` (`sha-<commit>`). Pousser un tag
+`v…` sur un commit de `main` la vérifie comme le déploiement la vérifie, donne
+à son digest le tag de la release, puis publie la release GitHub
+([paperclip-fleet#126](https://github.com/canatac/paperclip-fleet/issues/126)).
+
+| Job | Déclenchement | Jeton | Étapes |
+|---|---|---|---|
+| `prepare` | tag `v*` poussé ; lancement manuel (dry run) | lecture seule (`contents`, `actions`, `attestations`, `packages`) | contrôles ci-dessous, notes de release |
+| `publish` | tag `v*` poussé seulement | `contents` et `packages` en écriture ; aucun code du dépôt exécuté | tag GHCR du digest, release GitHub |
+
+`prepare`, dans l'ordre ; le premier échec arrête la release avant toute
+écriture :
+
+1. **Tag et commit** ([`release-notes.sh check`](../../scripts/agentfleet/release-notes.sh)).
+   - Le tag suit le motif du champ `tag` de l'image-lock de paperclip-fleet :
+     `^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`.
+   - Le commit visé est atteignable depuis `main`, donc revu et mergé.
+2. **Aucune release ne porte déjà ce tag.**
+3. **Image du commit.** L'API du registre donne le digest que GHCR sert pour
+   `sha-<commit>`, qui doit être un manifeste d'image unique. Sans image, le
+   job s'arrête : le push sur `main` doit d'abord l'avoir publiée.
+4. **Attestations.** `gh attestation verify` s'exécute avec les options du
+   déploiement (`--signer-workflow …/release-image.yml`,
+   `--source-digest <commit>`, `--deny-self-hosted-runners`), plus
+   `--source-ref refs/heads/main` : provenance SLSA, puis SBOM SPDX 2.3.
+5. **Runs du commit sur `main`.** `release-image`, `ci` et `security` doivent
+   avoir un run `push` réussi.
+6. **Notes** (`release-notes.sh notes`). Elles portent les champs d'une note
+   de release de paperclip-fleet (`Release`, `Commit source`, `Digest`,
+   `Attestation`, `CI`, `Compatibilité DB`), plus l'image, le commit
+   upstream, le nombre de migrations et les PR mergées depuis la release
+   précédente (la base upstream d'`upstream-version.json` pour la première).
+   `Compatibilité DB` vaut `none` quand aucune migration n'a changé depuis
+   cette base ; sinon, la liste des migrations changées est à classer dans la
+   PR de promotion, qui écrit aussi le rollback.
+
+`publish` relit le manifeste du digest, vérifie que ses octets donnent bien ce
+digest, le repose sous le tag de la release et contrôle que le tag résout vers
+le même digest. Il crée ensuite la release (`--verify-tag`). Un tag avec suffixe
+(`v1.2.3-rc.1`) donne une *pre-release*.
+
+Le lancement manuel (`workflow_dispatch`, entrée `tag`) exécute `prepare` sur
+la tête de `main` pour un tag qui n'existe pas encore. Il ne tague et ne publie
+rien ; les notes apparaissent dans le résumé du run.
+
+Pour publier une release, sur un commit de `main` dont les runs `push` sont
+verts :
+
+```sh
+git tag -a v<version> <commit> -m v<version>
+git push origin v<version>
+```
+
+Le numéro de la première release est une décision de l'opérateur
+([paperclip-fleet#127](https://github.com/canatac/paperclip-fleet/issues/127)).
 
 ## Checks obligatoires sur `main`
 
