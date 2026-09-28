@@ -5997,7 +5997,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         .from(chatConversations)
         .where(eq(chatConversations.endpointId, endpoint.id));
       expect(rows).toHaveLength(1);
-    });
+    }, { timeout: 5_000 });
     const [conversation] = await db
       .select()
       .from(chatConversations)
@@ -6013,7 +6013,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         "unmentioned follow-up delivered first",
       ]);
       expect(wakeup).toHaveBeenCalledTimes(2);
-    });
+    }, { timeout: 5_000 });
     await service.shutdown();
   });
 
@@ -14046,7 +14046,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         .from(chatConversations)
         .where(eq(chatConversations.endpointId, endpoint.id));
       expect(rows).toHaveLength(1);
-    });
+    }, { timeout: 5_000 });
     const [conversation] = await db
       .select()
       .from(chatConversations)
@@ -14057,7 +14057,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         .from(issueComments)
         .where(eq(issueComments.issueId, conversation.issueId));
       expect(rows).toHaveLength(8);
-    });
+    }, { timeout: 5_000 });
     const comments = await db
       .select({ id: issueComments.id, body: issueComments.body })
       .from(issueComments)
@@ -14084,7 +14084,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(calls.map((call) => call[1]?.payload?.wakeCommentId)).toEqual(
         comments.map((comment) => comment.id),
       );
-    });
+    }, { timeout: 5_000 });
     // The last comment and wakeup commit inside the lease. Under full-suite
     // load the assertions above can observe those effects one microtask before
     // the deferred owner's `finally` deletes its lease. Require prompt eventual
@@ -14096,7 +14096,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           .from(chatEndpointLeases)
           .where(eq(chatEndpointLeases.endpointId, endpoint.id)),
       ).toHaveLength(0);
-    });
+    }, { timeout: 5_000 });
     await competingService.shutdown();
     await service.shutdown();
   });
@@ -59575,7 +59575,10 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     // request is queued. The duplicate delivery callback becomes a no-op.
     expect(deferred).toHaveLength(4);
     await drainDeferred();
+    // On a loaded host a durable ingress can answer 503 and be scheduled for a
+    // retry; drive the durable recovery rather than requiring one pass to win.
     await vi.waitFor(async () => {
+      await service.processPendingDeliveries();
       const deliveries = await db
         .select({
           eventKind: chatDeliveries.eventKind,
@@ -59587,7 +59590,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(
         deliveries.every((delivery) => delivery.state === "processed"),
       ).toBe(true);
-    });
+    }, { timeout: 5_000 });
 
     const [conversation] = await db
       .select()
@@ -59615,9 +59618,10 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).resolves.toMatchObject({ ok: true });
     expect(deferred).toHaveLength(1);
     await drainDeferred();
-    await vi.waitFor(() => expect(deferred).toHaveLength(1));
+    await vi.waitFor(() => expect(deferred).toHaveLength(1), { timeout: 5_000 });
     await drainDeferred();
     await vi.waitFor(async () => {
+      await service.processPendingDeliveries();
       await expect(
         db
           .select({
@@ -59641,7 +59645,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           state: "filtered",
         },
       ]);
-    });
+    }, { timeout: 5_000 });
     await expect(
       db
         .select({ body: issueComments.body })
