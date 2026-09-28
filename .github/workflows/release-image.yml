@@ -1,0 +1,194 @@
+# Paperclip image of the fork, built once and attested (AF-CI-002,
+# specification §7.2 and §7.3; contract: paperclip-fleet
+# docs/deploy/PROMOTION.md). GitHub-hosted runners only, actions pinned by SHA,
+# no secret besides the workflow token. Documented in docs/agentfleet/CI.md.
+#
+# Pull request and manual run (verify-image, read-only token): build, smoke
+# test, SBOM. Nothing is published.
+# Push on main (publish-image): the same steps, then the tested image is
+# pushed by digest to GHCR, the registry copy is checked against the tested
+# layers, and the digest receives a SLSA provenance and an SPDX SBOM
+# attestation, verified as the deployment verifies them.
+name: release-image
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/release-image.yml
+      - .github/actions/agentfleet-image/**
+      - scripts/agentfleet/image-smoke.sh
+      - scripts/assert-orphan-reaping.sh
+      - scripts/docker-entrypoint.sh
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+# One publication per main commit, never cancelled half-way; pull requests
+# keep only their latest run.
+concurrency:
+  group: release-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/canatac/agentfleet-paperclip
+
+jobs:
+  verify-image:
+    name: verify-image
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build, smoke test and SBOM
+        uses: ./.github/actions/agentfleet-image
+        with:
+          commit: ${{ github.sha }}
+          out-dir: ${{ runner.temp }}/agentfleet-image
+
+      - name: Keep the smoke report, image metadata and SBOM
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agentfleet-image-${{ github.sha }}
+          path: ${{ runner.temp }}/agentfleet-image
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish-image:
+    name: publish-image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build, smoke test and SBOM
+        id: image
+        uses: ./.github/actions/agentfleet-image
+        with:
+          commit: ${{ github.sha }}
+          out-dir: ${{ runner.temp }}/agentfleet-image
+
+      # The tested image itself is pushed: no rebuild between the smoke test
+      # and the registry.
+      - name: Push the tested image by digest
+        id: push
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          remote="$IMAGE_REPOSITORY:sha-$COMMIT"
+          docker tag "$IMAGE" "$remote"
+          docker push "$remote"
+          digest=$(docker image inspect "$remote" \
+            | jq -r --arg repo "$IMAGE_REPOSITORY" '.[0].RepoDigests[] | select(startswith($repo + "@sha256:")) | sub("^[^@]*@"; "")' \
+            | head -n 1)
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE_REPOSITORY@$digest (tag sha-$COMMIT)"
+
+      # Same layers and same configuration in the registry as in the tested
+      # image, read back from GHCR.
+      - name: Registry copy is the tested image
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          ref="$IMAGE_REPOSITORY@$DIGEST"
+          raw=$(docker buildx imagetools inspect "$ref" --raw)
+          jq -e '.mediaType | test("manifest\\.v[0-9]+\\+json$")' <<<"$raw" >/dev/null
+          remote_config=$(jq -r .config.digest <<<"$raw")
+          remote_layers=$(docker buildx imagetools inspect "$ref" --format '{{json .Image}}' | jq -c .rootfs.diff_ids)
+          local_id=$(docker image inspect -f '{{.Id}}' "$IMAGE")
+          local_layers=$(docker image inspect -f '{{json .RootFS.Layers}}' "$IMAGE" | jq -c .)
+          echo "registry: config $remote_config, $(jq length <<<"$remote_layers") layers"
+          echo "local:    id $local_id, $(jq length <<<"$local_layers") layers"
+          [[ $remote_layers == "$local_layers" ]]
+          [[ $local_id == "$remote_config" || $local_id == "$DIGEST" ]]
+
+      - name: Provenance attestation (SLSA)
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          # Storage records exist only for organization-owned repositories.
+          create-storage-record: false
+
+      - name: SBOM attestation (SPDX 2.3)
+        id: sbom
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: ${{ runner.temp }}/agentfleet-image/sbom.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      # The checks deploy-conductor-ops and the host run before a deployment.
+      - name: Attestations verify as the deployment verifies them
+        id: verify
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          common=(--repo "$GITHUB_REPOSITORY"
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release-image.yml"
+            --source-digest "$COMMIT" --deny-self-hosted-runners)
+          gh attestation verify "oci://$IMAGE_REPOSITORY@$DIGEST" "${common[@]}"
+          gh attestation verify "oci://$IMAGE_REPOSITORY@$DIGEST" "${common[@]}" \
+            --predicate-type https://spdx.dev/Document/v2.3
+
+      - name: Summary
+        if: always()
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          {
+            echo "## Published Paperclip image"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image | \`$IMAGE_REPOSITORY@${DIGEST:-not pushed}\` |"
+            echo "| Tag | \`sha-$COMMIT\` |"
+            echo "| Source commit | \`$COMMIT\` |"
+            echo "| Provenance attestation | ${{ steps.provenance.outcome }} |"
+            echo "| SBOM attestation | ${{ steps.sbom.outcome }} |"
+            echo "| \`gh attestation verify\` | ${{ steps.verify.outcome }} |"
+          } >>"$GITHUB_STEP_SUMMARY"
+          docker logout ghcr.io >/dev/null 2>&1 || true
+
+      - name: Keep the smoke report, image metadata and SBOM
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agentfleet-image-${{ github.sha }}
+          path: ${{ runner.temp }}/agentfleet-image
+          if-no-files-found: ignore
+          retention-days: 90
