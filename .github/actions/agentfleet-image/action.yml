@@ -122,14 +122,20 @@ runs:
         SYFT_FILE_METADATA_SELECTION: none
       run: |
         set -euo pipefail
-        GOBIN="$RUNNER_TEMP/syft-bin" go install github.com/anchore/syft/cmd/syft@v1.52.0
-        "$RUNNER_TEMP/syft-bin/syft" version
+        # Same version stamps as the upstream release build (.goreleaser.yaml),
+        # so that the SBOM names its tool: syft-1.52.0, commit of tag v1.52.0.
+        GOBIN="$RUNNER_TEMP/syft-bin" go install \
+          -ldflags "-X main.version=1.52.0 -X main.gitCommit=02ba369d13b4248395b20a504eca94b0cab564d8" \
+          github.com/anchore/syft/cmd/syft@v1.52.0
+        "$RUNNER_TEMP/syft-bin/syft" version | tee "$RUNNER_TEMP/syft-version.txt"
+        grep -Eq '^Version: +1\.52\.0$' "$RUNNER_TEMP/syft-version.txt"
         sbom="$OUT_DIR/sbom.spdx.json"
         "$RUNNER_TEMP/syft-bin/syft" scan "docker:$IMAGE" -o "spdx-json@2.3=$sbom"
         size=$(stat -c %s "$sbom")
         packages=$(jq '.packages | length' "$sbom")
         echo "SBOM: $packages packages, $size bytes"
         jq -e '.spdxVersion == "SPDX-2.3"' "$sbom" >/dev/null
+        jq -e '.creationInfo.creators | index("Tool: syft-1.52.0")' "$sbom" >/dev/null
         test "$packages" -gt 0
         test "$size" -lt 16000000
 

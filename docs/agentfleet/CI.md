@@ -269,7 +269,9 @@ Deux contre-épreuves :
 **SBOM.** Il est au format SPDX 2.3, produit par syft v1.52.0. syft est
 installé depuis son module Go (`go install …@v1.52.0`, Go 1.26.3 par
 `actions/setup-go`) : la base de sommes de contrôle Go (`sum.golang.org`)
-vérifie le module et chacune de ses dépendances. Le SBOM ne liste que les
+vérifie le module et chacune de ses dépendances. Le binaire reçoit la version
+et le commit du tag `v1.52.0`, comme le build de release de syft : le SBOM
+nomme son outil (`Tool: syft-1.52.0`), ce que l'étape vérifie. Le SBOM ne liste que les
 paquets (`SYFT_FILE_METADATA_SELECTION=none`), pour rester sous la limite de
 16 Mo d'un prédicat d'attestation.
 
