@@ -1,0 +1,158 @@
+# Builds the Paperclip image once, smoke-tests it and writes its SBOM
+# (AF-CI-002). Shared by both jobs of .github/workflows/release-image.yml, so
+# that a pull request runs exactly the steps main runs before publishing.
+# Documented in docs/agentfleet/CI.md.
+name: agentfleet-image
+description: Build the production image once, smoke-test it and write its SPDX SBOM.
+
+inputs:
+  commit:
+    description: Full commit SHA of the checked-out tree, stamped into the image.
+    required: true
+  out-dir:
+    description: Directory for the smoke report, container log, image metadata and SBOM.
+    required: true
+
+outputs:
+  image:
+    description: Local reference of the built image.
+    value: ${{ steps.build.outputs.image }}
+
+runs:
+  using: composite
+  steps:
+    # The image build needs more room than a fresh runner leaves free.
+    - name: Free runner disk
+      shell: bash
+      run: |
+        set -euo pipefail
+        df -h /
+        sudo rm -rf /usr/share/dotnet /usr/share/swift /usr/local/lib/android \
+          /usr/local/share/boost /usr/local/share/powershell /opt/ghc \
+          /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/PyPy /opt/hostedtoolcache/Ruby || true
+        docker system prune -af >/dev/null || true
+        df -h /
+
+    # Labels read by the deployment (paperclip-fleet docs/deploy/PROMOTION.md):
+    # OCI source, revision and version, upstream base (upstream-version.json),
+    # and the upstream schema labels (last migration, migration count).
+    - name: Build the production image (linux/amd64, no cache)
+      id: build
+      shell: bash
+      env:
+        COMMIT: ${{ inputs.commit }}
+        OUT_DIR: ${{ inputs.out-dir }}
+        SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+      run: |
+        set -euo pipefail
+        [[ $COMMIT =~ ^[0-9a-f]{40}$ ]]
+        mkdir -p "$OUT_DIR"
+        image="agentfleet-paperclip:ci-$COMMIT"
+        version="$(jq -r .version server/package.json)+0.git.${COMMIT:0:7}"
+        migrations=$(find packages/db/src/migrations -maxdepth 1 -name '*.sql' -printf '%f\n' | LC_ALL=C sort)
+        last_migration=$(tail -n 1 <<<"$migrations")
+        migration_count=$(wc -l <<<"$migrations" | tr -d ' ')
+        # No build cache and no attestation manifest: the image is built from
+        # the checked-out tree only, as a single linux/amd64 manifest.
+        docker build \
+          --file Dockerfile \
+          --target production \
+          --platform linux/amd64 \
+          --provenance=false \
+          --sbom=false \
+          --build-arg "PAPERCLIP_BUILD_COMMIT=$COMMIT" \
+          --build-arg "CLI_TOOLS_CACHE_EPOCH=$(date -u +%G-W%V)" \
+          --label "org.opencontainers.image.source=$SOURCE_URL" \
+          --label "org.opencontainers.image.revision=$COMMIT" \
+          --label "org.opencontainers.image.version=$version" \
+          --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          --label "org.opencontainers.image.title=agentfleet-paperclip" \
+          --label "org.opencontainers.image.licenses=MIT" \
+          --label "io.github.canatac.agentfleet.upstream-repository=$(jq -r .repository upstream-version.json)" \
+          --label "io.github.canatac.agentfleet.upstream-commit=$(jq -r .commit upstream-version.json)" \
+          --label "io.github.canatac.agentfleet.upstream-tag=$(jq -r .tag upstream-version.json)" \
+          --label "io.github.paperclipai.schema.last-migration=$last_migration" \
+          --label "io.github.paperclipai.schema.migration-count=$migration_count" \
+          --tag "$image" \
+          .
+        docker image inspect "$image" \
+          | jq '.[0] | {id: .Id, os: .Os, architecture: .Architecture, size: .Size, labels: .Config.Labels, layers: .RootFS.Layers}' \
+          >"$OUT_DIR/image.json"
+        echo "image=$image" >>"$GITHUB_OUTPUT"
+
+    - name: Smoke test of the built image
+      shell: bash
+      env:
+        IMAGE: ${{ steps.build.outputs.image }}
+        COMMIT: ${{ inputs.commit }}
+        OUT_DIR: ${{ inputs.out-dir }}
+      run: bash scripts/agentfleet/image-smoke.sh "$IMAGE" "$COMMIT" "$OUT_DIR/smoke"
+
+    # The smoke must be able to fail: the same image, announced with another
+    # commit, has to be rejected at its first check.
+    - name: Smoke test rejects an image of another commit
+      shell: bash
+      env:
+        IMAGE: ${{ steps.build.outputs.image }}
+        OUT_DIR: ${{ inputs.out-dir }}
+      run: |
+        set -euo pipefail
+        if bash scripts/agentfleet/image-smoke.sh "$IMAGE" 0000000000000000000000000000000000000000 "$OUT_DIR/smoke-negative"; then
+          echo "the smoke test accepted an image announced with another commit" >&2
+          exit 1
+        fi
+        jq -e 'length == 1 and .[0].check == "image-metadata" and .[0].status == "FAIL"' \
+          "$OUT_DIR/smoke-negative/smoke-report.json"
+
+    # syft from its Go module at a fixed version: the Go checksum database
+    # (sum.golang.org) verifies the module and every dependency.
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      with:
+        go-version: "1.26.3"
+        cache: false
+
+    - name: SPDX SBOM of the built image (syft v1.52.0)
+      shell: bash
+      env:
+        IMAGE: ${{ steps.build.outputs.image }}
+        OUT_DIR: ${{ inputs.out-dir }}
+        SYFT_CHECK_FOR_APP_UPDATE: "false"
+        # Packages only: the per-file listing would push the document past the
+        # 16 MB limit of an attestation predicate.
+        SYFT_FILE_METADATA_SELECTION: none
+      run: |
+        set -euo pipefail
+        GOBIN="$RUNNER_TEMP/syft-bin" go install github.com/anchore/syft/cmd/syft@v1.52.0
+        "$RUNNER_TEMP/syft-bin/syft" version
+        sbom="$OUT_DIR/sbom.spdx.json"
+        "$RUNNER_TEMP/syft-bin/syft" scan "docker:$IMAGE" -o "spdx-json@2.3=$sbom"
+        size=$(stat -c %s "$sbom")
+        packages=$(jq '.packages | length' "$sbom")
+        echo "SBOM: $packages packages, $size bytes"
+        jq -e '.spdxVersion == "SPDX-2.3"' "$sbom" >/dev/null
+        test "$packages" -gt 0
+        test "$size" -lt 16000000
+
+    - name: Summary of the image checks
+      if: always()
+      shell: bash
+      env:
+        OUT_DIR: ${{ inputs.out-dir }}
+      run: |
+        {
+          echo "## Paperclip image checks"
+          echo
+          if [[ -f $OUT_DIR/smoke/smoke-report.json ]]; then
+            echo "| Smoke check | Status | Detail |"
+            echo "|---|---|---|"
+            jq -r '.[] | "| \(.check) | \(.status) | \(.detail | gsub("\\|"; "/")) |"' "$OUT_DIR/smoke/smoke-report.json"
+            echo
+          fi
+          if [[ -f $OUT_DIR/smoke-negative/smoke-report.json ]]; then
+            echo "Counter-check, same image announced with another commit: $(jq -r '.[0] | "\(.check) \(.status)"' "$OUT_DIR/smoke-negative/smoke-report.json")"
+            echo
+          fi
+          if [[ -f $OUT_DIR/sbom.spdx.json ]]; then
+            echo "SBOM: SPDX $(jq -r .spdxVersion "$OUT_DIR/sbom.spdx.json"), $(jq '.packages | length' "$OUT_DIR/sbom.spdx.json") packages"
+          fi
+        } >>"$GITHUB_STEP_SUMMARY"

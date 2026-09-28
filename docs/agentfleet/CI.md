@@ -209,6 +209,95 @@ Contre-épreuves locales : une exception retirée, une exception sans paquet et
 MPL-2.0 retirée de la liste font chacune échouer le job, sur les paquets
 attendus.
 
+## `release-image.yml` (AF-CI-002)
+
+Image Paperclip du fork, construite une seule fois, testée puis attestée
+(spécification §7.2 et §7.3 ; contrat :
+[`PROMOTION.md` de paperclip-fleet](https://github.com/canatac/paperclip-fleet/blob/main/docs/deploy/PROMOTION.md)).
+Les étapes communes sont dans l'action composite
+[`.github/actions/agentfleet-image`](../../.github/actions/agentfleet-image/action.yml) :
+une pull request exécute exactement ce que `main` exécute avant de publier.
+
+| Job | Déclenchement | Jeton | Étapes |
+|---|---|---|---|
+| `verify-image` | pull request touchant l'image (`Dockerfile`, `.dockerignore`, le workflow, l'action, le smoke test, l'entrypoint), lancement manuel | lecture seule | build, smoke test, contre-épreuve, SBOM |
+| `publish-image` | push sur `main` | `packages`, `id-token`, `attestations` en écriture | les mêmes, puis push par digest, contrôle de la copie du registre, attestations, vérification |
+
+**Build.** Cible `production` du `Dockerfile` upstream, inchangé, pour
+`linux/amd64` seulement : le runner auto-hébergé de `conductor-ops` porte le
+label `x64` ([job 108100601001](https://github.com/canatac/paperclip-fleet/actions/runs/36144016823/job/108100601001)).
+Aucun cache de build, aucun manifeste d'attestation BuildKit
+(`--provenance=false --sbom=false`) : l'image est un manifeste unique.
+`PAPERCLIP_BUILD_COMMIT` vaut le commit construit. Labels :
+`org.opencontainers.image.source`, `revision`, `version` (la version que le
+serveur annonce sans tag : `<version de server/package.json>+0.git.<sha7>`),
+`created`, `title`, `licenses` ; base upstream d'`upstream-version.json`
+(`io.github.canatac.agentfleet.upstream-*`) ; labels de schéma de l'upstream
+(`io.github.paperclipai.schema.last-migration`, `migration-count`). La couche
+des outils CLI du `Dockerfile` installe des versions `@latest` : le SBOM
+enregistre celles qui sont réellement dans l'image.
+
+**Smoke test** ([`image-smoke.sh`](../../scripts/agentfleet/image-smoke.sh)).
+Il porte sur l'image construite, lancée comme en production :
+- entrypoint et `tini` ;
+- PostgreSQL embarqué sur un volume neuf ;
+- mode `authenticated`.
+
+Le port est publié sur la boucle locale seulement ; la télémétrie est coupée
+et aucun agent n'est configuré.
+
+| Contrôle | Vérifie |
+|---|---|
+| `image-metadata` | `PAPERCLIP_BUILD_COMMIT`, labels `revision` et `source`, `linux/amd64` ; un échec arrête le smoke |
+| `build-stamp` | `server/dist/build-info.json` porte le commit |
+| `runtime-tools` | `curl` (healthcheck de compose), `tini`, `gosu` |
+| `pid1-reaps-orphans` | `scripts/assert-orphan-reaping.sh` de l'upstream |
+| `first-start` | `/api/health` répond `ok` sur un volume neuf (migrations appliquées au premier démarrage) |
+| `health-commit` | `/api/health` annonce le commit, comme le vérifie le déploiement |
+| `migrations` | nombre de lignes de `drizzle.__drizzle_migrations` = nombre de migrations de l'image = label |
+| `agentfleet-code` | code de l'adaptateur Hermes, chargé comme le serveur le charge (`tsx`, résolution depuis `server/`) : identifiant de run Hermes conservé à l'octet près, caractère de contrôle refusé (AF-OBS-002) ; réponse finale absente rejetée en `MISSING_FINAL_RESPONSE` (PC-OBS-HERMES-H3) |
+| `graceful-stop` | `docker stop` termine le conteneur avant le délai de grâce (pas de code 137) |
+| `restart` | redémarrage sur le même volume, santé `ok`, migrations inchangées |
+
+Deux contre-épreuves :
+- à chaque run, la même image annoncée avec un autre commit doit être refusée
+  dès `image-metadata` ;
+- en local, avec l'`execute.ts` du commit de base upstream, le contrôle
+  `agentfleet-code` échoue : la réponse finale absente est acceptée, avec le
+  code de sortie 0.
+
+**SBOM.** Il est au format SPDX 2.3, produit par syft v1.52.0. syft est
+installé depuis son module Go (`go install …@v1.52.0`, Go 1.26.3 par
+`actions/setup-go`) : la base de sommes de contrôle Go (`sum.golang.org`)
+vérifie le module et chacune de ses dépendances. Le SBOM ne liste que les
+paquets (`SYFT_FILE_METADATA_SELECTION=none`), pour rester sous la limite de
+16 Mo d'un prédicat d'attestation.
+
+**Publication (`main`).**
+
+1. L'image testée est poussée telle quelle, sans nouveau build, sous
+   `ghcr.io/canatac/agentfleet-paperclip:sha-<commit>` ; le digest est relu
+   du push.
+2. La copie du registre, relue depuis GHCR, a les mêmes couches (`diff_ids`) et
+   la même configuration que l'image testée.
+3. Le digest reçoit deux attestations (`actions/attest` v4.2.2), poussées aussi
+   dans le registre : la provenance SLSA, puis le SBOM SPDX 2.3. Aucun
+   enregistrement de stockage n'est créé : il n'existe que pour les dépôts
+   d'organisation.
+4. `gh attestation verify` contrôle ces attestations avec les options du
+   déploiement (`--signer-workflow …/release-image.yml`,
+   `--source-digest <commit>`, `--deny-self-hosted-runners`) : d'abord la
+   provenance, puis le prédicat `https://spdx.dev/Document/v2.3`.
+
+L'artefact `agentfleet-image-<commit>` conserve le rapport du smoke, les
+métadonnées de l'image et le SBOM : 14 jours pour une pull request, 90 jours
+pour `main`. Les tags `v*`, les notes de release et la première release
+relèvent d'AF-CI-003
+([paperclip-fleet#21](https://github.com/canatac/paperclip-fleet/issues/21)).
+
+Les jobs de ce workflow ne sont pas des checks obligatoires : `verify-image`
+ne tourne que si une pull request touche l'image.
+
 ## Checks obligatoires sur `main`
 
 À déclarer dans le ruleset `main` du fork, au fil des tickets :
