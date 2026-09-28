@@ -1,0 +1,266 @@
+# Release of the fork on a v* tag (AF-CI-003a, paperclip-fleet#126;
+# specification §7.3; contract: paperclip-fleet docs/deploy/PROMOTION.md).
+# Documented in docs/agentfleet/CI.md.
+#
+# Nothing is built here: release-image.yml already published and attested the
+# image of every commit of main (sha-<commit>). A release checks that image as
+# the deployment checks it, gives its digest the release tag and publishes
+# release notes with the fields of a paperclip-fleet release note.
+#
+# prepare (read-only token): tag format and commit on main, published digest,
+# attestations, runs of the commit, notes. publish (tag push only): the only
+# job with write access; it runs no code of the repository.
+# Manual run: a dry run of prepare on the head of main for a tag that does not
+# exist yet; nothing is tagged or published.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to check (dry run, not created)
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/canatac/agentfleet-paperclip
+  SIGNER_WORKFLOW: canatac/agentfleet-paperclip/.github/workflows/release-image.yml
+  MANIFEST_TYPES: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json
+
+jobs:
+  prepare:
+    name: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+      packages: read
+    outputs:
+      tag: ${{ steps.target.outputs.tag }}
+      commit: ${{ steps.target.outputs.commit }}
+      prerelease: ${{ steps.target.outputs.prerelease }}
+      digest: ${{ steps.digest.outputs.digest }}
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Release tag and commit
+        id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ $EVENT == push ]]; then
+            tag=$GITHUB_REF_NAME
+            commit=$(git rev-parse --verify "refs/tags/$tag^{commit}")
+          else
+            [[ $GITHUB_REF == refs/heads/main ]] || { echo "::error::a dry run starts from main"; exit 1; }
+            tag=$INPUT_TAG
+            commit=$GITHUB_SHA
+            if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+              echo "::error::tag $tag exists: a dry run checks a tag that does not exist yet"
+              exit 1
+            fi
+          fi
+          scripts/agentfleet/release-notes.sh check "$tag" "$commit"
+          prerelease=false
+          [[ $tag == *-* ]] && prerelease=true
+          {
+            echo "tag=$tag"
+            echo "commit=$commit"
+            echo "prerelease=$prerelease"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: No release carries the tag yet
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if out=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" 2>&1); then
+            echo "::error::release $TAG exists: $(jq -r .html_url <<<"$out")"
+            exit 1
+          fi
+          grep -q 'HTTP 404' <<<"$out" || { echo "::error::cannot read the releases: $out"; exit 1; }
+          echo "No release $TAG yet"
+
+      # Read from the registry API: the digest is the one GHCR serves for
+      # sha-<commit>, and the manifest is a single image, not an index.
+      - name: Image published for the commit
+        id: digest
+        env:
+          COMMIT: ${{ steps.target.outputs.commit }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          name=${IMAGE_REPOSITORY#ghcr.io/}
+          token=$(curl -fsS -u "$GITHUB_ACTOR:$GH_TOKEN" "https://ghcr.io/token?scope=repository:$name:pull" | jq -er .token)
+          echo "::add-mask::$token"
+          if ! headers=$(curl -fsS -I -H "Authorization: Bearer $token" -H "Accept: $MANIFEST_TYPES" \
+              "https://ghcr.io/v2/$name/manifests/sha-$COMMIT"); then
+            echo "::error::no image $IMAGE_REPOSITORY:sha-$COMMIT: release-image.yml publishes it on the push to main; wait for that run"
+            exit 1
+          fi
+          header() { tr -d '\r' <<<"$headers" | awk -v key="$1" 'tolower($1) == key ":" { print $2 }' | tail -n 1; }
+          type=$(header content-type)
+          digest=$(header docker-content-digest)
+          [[ $type =~ manifest\.v[0-9]+\+json$ ]] || { echo "::error::not a single image manifest: $type"; exit 1; }
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          echo "$IMAGE_REPOSITORY:sha-$COMMIT -> $IMAGE_REPOSITORY@$digest ($type)"
+
+      # The checks deploy-conductor-ops and the host run before a deployment,
+      # and the image must come from a run on main.
+      - name: Attestations verify as the deployment verifies them
+        id: verify
+        env:
+          COMMIT: ${{ steps.target.outputs.commit }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # gh reads the registry with the docker credentials (private image).
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          common=(--repo "$GITHUB_REPOSITORY" --signer-workflow "$SIGNER_WORKFLOW"
+            --source-digest "$COMMIT" --source-ref refs/heads/main --deny-self-hosted-runners
+            --format json)
+          provenance=$(gh attestation verify "oci://$IMAGE_REPOSITORY@$DIGEST" "${common[@]}" | jq length)
+          sbom=$(gh attestation verify "oci://$IMAGE_REPOSITORY@$DIGEST" "${common[@]}" \
+            --predicate-type https://spdx.dev/Document/v2.3 | jq length)
+          (( provenance > 0 && sbom > 0 ))
+          summary="\`gh attestation verify\` réussi : provenance SLSA ($provenance), SBOM SPDX 2.3 ($sbom) ;"
+          summary+=" \`--signer-workflow $SIGNER_WORKFLOW --source-digest $COMMIT --source-ref refs/heads/main --deny-self-hosted-runners\`"
+          echo "summary=$summary" >>"$GITHUB_OUTPUT"
+          echo "$summary"
+
+      - name: Runs of the commit on main
+        id: runs
+        env:
+          COMMIT: ${{ steps.target.outputs.commit }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for workflow in release-image ci security; do
+            url=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow.yml" --commit "$COMMIT" \
+              --branch main --event push --json url,conclusion \
+              --jq 'map(select(.conclusion == "success")) | .[0].url // empty')
+            if [[ -z $url ]]; then
+              echo "::error::no successful $workflow.yml run for $COMMIT on main"
+              exit 1
+            fi
+            echo "${workflow//-/_}=$url" >>"$GITHUB_OUTPUT"
+            echo "$workflow: $url"
+          done
+
+      - name: Release notes
+        id: notes
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
+          COMMIT: ${{ steps.target.outputs.commit }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          ATTESTATIONS: ${{ steps.verify.outputs.summary }}
+          RELEASE_IMAGE_RUN: ${{ steps.runs.outputs.release_image }}
+          CI_RUN: ${{ steps.runs.outputs.ci }}
+          SECURITY_RUN: ${{ steps.runs.outputs.security }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export RELEASE_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          # Previous release: the latest published release whose tag is an
+          # ancestor of this commit; none before the first release.
+          releases=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 \
+            --json tagName,publishedAt --jq 'sort_by(.publishedAt) | reverse | .[].tagName')
+          since=
+          while read -r previous; do
+            [[ -n $previous && $previous != "$TAG" ]] || continue
+            previous_commit=$(git rev-parse --verify --quiet "refs/tags/$previous^{commit}") || continue
+            if git merge-base --is-ancestor "$previous_commit" "$COMMIT"; then
+              since=$previous_commit
+              break
+            fi
+          done <<<"$releases"
+          notes=$(scripts/agentfleet/release-notes.sh notes "$TAG" "$COMMIT" "$DIGEST" ${since:+"$since"})
+          delimiter="NOTES_$(openssl rand -hex 16)"
+          {
+            echo "notes<<$delimiter"
+            echo "$notes"
+            echo "$delimiter"
+          } >>"$GITHUB_OUTPUT"
+          {
+            echo "## Release $TAG ($GITHUB_EVENT_NAME)"
+            echo
+            echo "$notes"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: publish
+    needs: prepare
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      # The manifest bytes of the published digest, put again under the
+      # release tag: same bytes, same digest, nothing rebuilt.
+      - name: Tag the published digest
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          DIGEST: ${{ needs.prepare.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          name=${IMAGE_REPOSITORY#ghcr.io/}
+          token=$(curl -fsS -u "$GITHUB_ACTOR:$GH_TOKEN" "https://ghcr.io/token?scope=repository:$name:pull,push" | jq -er .token)
+          echo "::add-mask::$token"
+          manifest="$RUNNER_TEMP/manifest.json"
+          headers=$(curl -fsS -D - -o "$manifest" -H "Authorization: Bearer $token" -H "Accept: $MANIFEST_TYPES" \
+            "https://ghcr.io/v2/$name/manifests/$DIGEST")
+          type=$(tr -d '\r' <<<"$headers" | awk 'tolower($1) == "content-type:" { print $2 }' | tail -n 1)
+          [[ $type =~ manifest\.v[0-9]+\+json$ ]]
+          [[ "sha256:$(sha256sum <"$manifest" | cut -d' ' -f1)" == "$DIGEST" ]]
+          curl -fsS -X PUT -H "Authorization: Bearer $token" -H "Content-Type: $type" \
+            --data-binary "@$manifest" "https://ghcr.io/v2/$name/manifests/$TAG"
+          tagged=$(curl -fsS -I -H "Authorization: Bearer $token" -H "Accept: $MANIFEST_TYPES" \
+            "https://ghcr.io/v2/$name/manifests/$TAG" | tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" { print $2 }')
+          if [[ $tagged != "$DIGEST" ]]; then
+            echo "::error::$IMAGE_REPOSITORY:$TAG resolves to ${tagged:-nothing}, not $DIGEST"
+            exit 1
+          fi
+          echo "$IMAGE_REPOSITORY:$TAG -> $DIGEST"
+
+      - name: Create the release
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          DIGEST: ${{ needs.prepare.outputs.digest }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          NOTES: ${{ needs.prepare.outputs.notes }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NOTES" >"$RUNNER_TEMP/notes.md"
+          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md")
+          [[ $PRERELEASE == true ]] && args+=(--prerelease)
+          gh release create "$TAG" "${args[@]}"
+          {
+            echo "## Release $TAG"
+            echo
+            echo "- $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
+            echo "- \`$IMAGE_REPOSITORY:$TAG\` = \`$IMAGE_REPOSITORY@$DIGEST\`"
+          } >>"$GITHUB_STEP_SUMMARY"
