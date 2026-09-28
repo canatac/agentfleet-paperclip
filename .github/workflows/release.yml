@@ -8,8 +8,10 @@
 # release notes with the fields of a paperclip-fleet release note.
 #
 # prepare (read-only token): tag format and commit on main, published digest,
-# attestations, runs of the commit, notes. publish (tag push only): the only
-# job with write access; it runs no code of the repository.
+# attestations, release assets (SBOM and Sigstore bundles of the verified
+# digest, AF-CI-003c, paperclip-fleet#142), runs of the commit, notes.
+# publish (tag push only): the only job with write access; it runs no code of
+# the repository and attaches the assets after checking their hashes.
 # Manual run: a dry run of prepare on the head of main for a tag that does not
 # exist yet; nothing is tagged or published.
 name: release
@@ -51,6 +53,10 @@ jobs:
       prerelease: ${{ steps.target.outputs.prerelease }}
       digest: ${{ steps.digest.outputs.digest }}
       notes: ${{ steps.notes.outputs.notes }}
+      sbom_sha256: ${{ steps.assets.outputs.sbom_sha256 }}
+      sbom_bundle_sha256: ${{ steps.assets.outputs.sbom_bundle_sha256 }}
+      provenance_bundle_sha256: ${{ steps.assets.outputs.provenance_bundle_sha256 }}
+      sums_sha256: ${{ steps.assets.outputs.sums_sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -148,6 +154,53 @@ jobs:
           echo "summary=$summary" >>"$GITHUB_OUTPUT"
           echo "$summary"
 
+      # Durable release assets: the artifact of release-image.yml expires
+      # after 90 days, a release asset does not. The bundles are downloaded
+      # for the verified digest, verified again under the same policy, then
+      # checked by release-notes.sh assets (statement about the digest,
+      # predicate type, one SBOM document).
+      - name: Release assets (SBOM and Sigstore bundles)
+        id: assets
+        env:
+          COMMIT: ${{ steps.target.outputs.commit }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          work="$RUNNER_TEMP/attestations"
+          mkdir -p "$work/provenance" "$work/sbom"
+          (cd "$work/provenance" && gh attestation download "oci://$IMAGE_REPOSITORY@$DIGEST" \
+            --repo "$GITHUB_REPOSITORY" --predicate-type https://slsa.dev/provenance/v1)
+          (cd "$work/sbom" && gh attestation download "oci://$IMAGE_REPOSITORY@$DIGEST" \
+            --repo "$GITHUB_REPOSITORY" --predicate-type https://spdx.dev/Document/v2.3)
+          provenance=$(find "$work/provenance" -name '*.jsonl')
+          sbom=$(find "$work/sbom" -name '*.jsonl')
+          [[ $(wc -l <<<"$provenance") == 1 && -n $provenance && $(wc -l <<<"$sbom") == 1 && -n $sbom ]]
+          common=(--repo "$GITHUB_REPOSITORY" --signer-workflow "$SIGNER_WORKFLOW"
+            --source-digest "$COMMIT" --source-ref refs/heads/main --deny-self-hosted-runners)
+          gh attestation verify "oci://$IMAGE_REPOSITORY@$DIGEST" --bundle "$provenance" "${common[@]}" >/dev/null
+          gh attestation verify "oci://$IMAGE_REPOSITORY@$DIGEST" --bundle "$sbom" "${common[@]}" \
+            --predicate-type https://spdx.dev/Document/v2.3 >/dev/null
+          scripts/agentfleet/release-notes.sh assets "$DIGEST" "$provenance" "$sbom" \
+            "$RUNNER_TEMP/release-assets" | tee -a "$GITHUB_OUTPUT"
+          {
+            echo "## Release assets"
+            echo
+            echo '```'
+            (cd "$RUNNER_TEMP/release-assets" && cat SHA256SUMS && sha256sum SHA256SUMS)
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the release assets for publish
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-assets
+          path: ${{ runner.temp }}/release-assets
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Runs of the commit on main
         id: runs
         env:
@@ -177,6 +230,10 @@ jobs:
           RELEASE_IMAGE_RUN: ${{ steps.runs.outputs.release_image }}
           CI_RUN: ${{ steps.runs.outputs.ci }}
           SECURITY_RUN: ${{ steps.runs.outputs.security }}
+          SBOM_SHA256: ${{ steps.assets.outputs.sbom_sha256 }}
+          SBOM_PACKAGES: ${{ steps.assets.outputs.sbom_packages }}
+          SBOM_BUNDLE_SHA256: ${{ steps.assets.outputs.sbom_bundle_sha256 }}
+          PROVENANCE_BUNDLE_SHA256: ${{ steps.assets.outputs.provenance_bundle_sha256 }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -216,7 +273,34 @@ jobs:
     permissions:
       contents: write
       packages: write
+      actions: read
     steps:
+      # The assets prepare checked, byte for byte: each hash must be the one
+      # prepare computed, or nothing is published.
+      - name: Release assets of prepare
+        env:
+          SBOM_SHA256: ${{ needs.prepare.outputs.sbom_sha256 }}
+          SBOM_BUNDLE_SHA256: ${{ needs.prepare.outputs.sbom_bundle_sha256 }}
+          PROVENANCE_BUNDLE_SHA256: ${{ needs.prepare.outputs.provenance_bundle_sha256 }}
+          SUMS_SHA256: ${{ needs.prepare.outputs.sums_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/release-assets"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name release-assets --dir "$dir"
+          cd "$dir"
+          check() {
+            local actual
+            actual=$(sha256sum "$1" | cut -d' ' -f1)
+            [[ -n $2 && $actual == "$2" ]] || { echo "::error::$1: sha256 $actual, prepare computed ${2:-nothing}"; exit 1; }
+          }
+          check sbom.spdx.json "$SBOM_SHA256"
+          check sbom.sigstore.jsonl "$SBOM_BUNDLE_SHA256"
+          check provenance.sigstore.jsonl "$PROVENANCE_BUNDLE_SHA256"
+          check SHA256SUMS "$SUMS_SHA256"
+          sha256sum -c SHA256SUMS
+          [[ $(find . -type f | wc -l) == 4 ]] || { echo "::error::unexpected files in the release assets"; exit 1; }
+
       # The manifest bytes of the published digest, put again under the
       # release tag: same bytes, same digest, nothing rebuilt.
       - name: Tag the published digest
@@ -257,7 +341,10 @@ jobs:
           printf '%s\n' "$NOTES" >"$RUNNER_TEMP/notes.md"
           args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md")
           [[ $PRERELEASE == true ]] && args+=(--prerelease)
-          gh release create "$TAG" "${args[@]}"
+          assets="$RUNNER_TEMP/release-assets"
+          gh release create "$TAG" "${args[@]}" \
+            "$assets/sbom.spdx.json" "$assets/sbom.sigstore.jsonl" "$assets/provenance.sigstore.jsonl" \
+            "$assets/SHA256SUMS"
           {
             echo "## Release $TAG"
             echo

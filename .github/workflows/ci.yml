@@ -73,6 +73,11 @@ jobs:
       - name: Node version policy
         run: pnpm check:node-version
 
+      # Needs the full history (fetch-depth: 0): the script is also run on
+      # the real history of origin/main (AF-CI-003c).
+      - name: Release notes script (AF-CI-003c)
+        run: scripts/agentfleet/release-notes.test.sh
+
       - name: Dockerfile deps stage
         run: node ./scripts/check-docker-deps-stage.mjs
 

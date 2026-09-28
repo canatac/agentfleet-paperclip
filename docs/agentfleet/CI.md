@@ -309,8 +309,8 @@ attesté l'image de chaque commit de `main` (`sha-<commit>`). Pousser un tag
 
 | Job | Déclenchement | Jeton | Étapes |
 |---|---|---|---|
-| `prepare` | tag `v*` poussé ; lancement manuel (dry run) | lecture seule (`contents`, `actions`, `attestations`, `packages`) | contrôles ci-dessous, notes de release |
-| `publish` | tag `v*` poussé seulement | `contents` et `packages` en écriture ; aucun code du dépôt exécuté | tag GHCR du digest, release GitHub |
+| `prepare` | tag `v*` poussé ; lancement manuel (dry run) | lecture seule (`contents`, `actions`, `attestations`, `packages`) | contrôles ci-dessous, pièces jointes, notes de release |
+| `publish` | tag `v*` poussé seulement | `contents` et `packages` en écriture, `actions` en lecture ; aucun code du dépôt exécuté | tag GHCR du digest, release GitHub avec ses pièces jointes |
 
 `prepare`, dans l'ordre ; le premier échec arrête la release avant toute
 écriture :
@@ -327,21 +327,51 @@ attesté l'image de chaque commit de `main` (`sha-<commit>`). Pousser un tag
    déploiement (`--signer-workflow …/release-image.yml`,
    `--source-digest <commit>`, `--deny-self-hosted-runners`), plus
    `--source-ref refs/heads/main` : provenance SLSA, puis SBOM SPDX 2.3.
-5. **Runs du commit sur `main`.** `release-image`, `ci` et `security` doivent
+5. **Pièces jointes** (AF-CI-003c,
+   [paperclip-fleet#142](https://github.com/canatac/paperclip-fleet/issues/142)).
+   - `gh attestation download` récupère les bundles Sigstore de la
+     provenance et du SBOM du digest vérifié.
+   - Ces bundles sont revérifiés (`gh attestation verify --bundle`, mêmes
+     options qu'à l'étape 4).
+   - `release-notes.sh assets` contrôle que chaque déclaration porte sur ce
+     digest, avec le bon type de prédicat, et qu'il n'y a qu'un document SBOM
+     (SPDX 2.3, au moins un paquet).
+   - Pièces produites : `sbom.spdx.json`, `sbom.sigstore.jsonl`,
+     `provenance.sigstore.jsonl`, `SHA256SUMS`. Elles sont conservées 7 jours
+     comme artefact du run, pour `publish`. L'artefact de `release-image`
+     expire après 90 jours ; une pièce jointe de release, non.
+6. **Runs du commit sur `main`.** `release-image`, `ci` et `security` doivent
    avoir un run `push` réussi.
-6. **Notes** (`release-notes.sh notes`). Elles portent les champs d'une note
-   de release de paperclip-fleet (`Release`, `Commit source`, `Digest`,
-   `Attestation`, `CI`, `Compatibilité DB`), plus l'image, le commit
-   upstream, le nombre de migrations et les PR mergées depuis la release
-   précédente (la base upstream d'`upstream-version.json` pour la première).
-   `Compatibilité DB` vaut `none` quand aucune migration n'a changé depuis
-   cette base ; sinon, la liste des migrations changées est à classer dans la
-   PR de promotion, qui écrit aussi le rollback.
+7. **Notes** (`release-notes.sh notes`).
+   - Champs de la décision de l'opérateur
+     ([paperclip-fleet#127](https://github.com/canatac/paperclip-fleet/issues/127)) :
+     `Version AgentFleet`, `Tag upstream de base`, `Commit upstream`,
+     `Commit source`, `Digest`, `SBOM` (fichier, nombre de paquets,
+     empreintes), `Provenance` (bundle et empreinte).
+   - Champs d'une note de release de paperclip-fleet : `Release`,
+     `Attestation`, `CI`, `Compatibilité DB`.
+   - Aussi : l'image, le nombre de migrations et les PR mergées depuis la
+     release précédente (la base upstream d'`upstream-version.json` pour la
+     première).
+   - `Compatibilité DB` vaut `none` quand aucune migration n'a changé depuis
+     cette base. Sinon, la liste des migrations changées est à classer dans
+     la PR de promotion, qui écrit aussi le rollback.
 
-`publish` relit le manifeste du digest, vérifie que ses octets donnent bien ce
-digest, le repose sous le tag de la release et contrôle que le tag résout vers
-le même digest. Il crée ensuite la release (`--verify-tag`). Un tag avec suffixe
-(`v1.2.3-rc.1`) donne une *pre-release*.
+`publish` enchaîne les étapes suivantes :
+
+1. Il télécharge les pièces jointes de `prepare` et vérifie leurs empreintes
+   SHA-256, une par une, contre celles que `prepare` a calculées.
+2. Il relit le manifeste du digest et vérifie que ses octets donnent bien ce
+   digest.
+3. Il le repose sous le tag de la release, puis contrôle que le tag résout
+   vers le même digest.
+4. Il crée la release (`--verify-tag`) avec les quatre pièces jointes.
+
+Un tag avec suffixe (`v1.2.3-rc.1`) donne une *pre-release*.
+
+Les tests du script (`scripts/agentfleet/release-notes.test.sh`) tournent
+dans `source-integrity`. Ils couvrent un dépôt synthétique (`check`, `notes`,
+`assets`, cas refusés) et l'historique réel d'`origin/main`.
 
 Le lancement manuel (`workflow_dispatch`, entrée `tag`) exécute `prepare` sur
 la tête de `main` pour un tag qui n'existe pas encore. Il ne tague et ne publie
@@ -355,8 +385,11 @@ git tag -a v<version> <commit> -m v<version>
 git push origin v<version>
 ```
 
-Le numéro de la première release est une décision de l'opérateur
+La première release est **`v0.1.0`**, une version propre au fork qui n'encode
+pas la version upstream. C'est une décision de l'opérateur du 28/09/2026
 ([paperclip-fleet#127](https://github.com/canatac/paperclip-fleet/issues/127)).
+Le tag n'est poussé qu'après son approbation explicite. Le déploiement se fait
+par digest seulement.
 
 ## Checks obligatoires sur `main`
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Checks and notes of a release of the fork, run by release.yml (AF-CI-003a,
-# paperclip-fleet#126). Documented in docs/agentfleet/CI.md. Git only: the
-# registry and the GitHub API are queried by the workflow, which passes the
-# results in the environment.
+# Checks, notes and assets of a release of the fork, run by release.yml
+# (AF-CI-003a, paperclip-fleet#126; AF-CI-003c, paperclip-fleet#142).
+# Documented in docs/agentfleet/CI.md. Git and files only: the registry and
+# the GitHub API are queried by the workflow, which passes the results in the
+# environment or as files. Tests: release-notes.test.sh.
 #
 #   release-notes.sh check TAG COMMIT
 #       TAG has the format of the tag field of the paperclip-fleet image lock
@@ -11,19 +12,32 @@
 #
 #   release-notes.sh notes TAG COMMIT DIGEST [SINCE]
 #       Release notes on stdout, with the fields of a paperclip-fleet release
-#       note (docs/deploy/PROMOTION.md). SINCE is the commit of the previous
-#       release; without it, the upstream base commit of upstream-version.json.
+#       note (docs/deploy/PROMOTION.md) and those of the release decision
+#       (paperclip-fleet#127). SINCE is the commit of the previous release;
+#       without it, the upstream base commit of upstream-version.json.
 #       Environment: RELEASE_URL, ATTESTATIONS (summary of the verification),
-#       RELEASE_IMAGE_RUN, CI_RUN, SECURITY_RUN (run URLs), IMAGE_REPOSITORY.
+#       RELEASE_IMAGE_RUN, CI_RUN, SECURITY_RUN (run URLs), IMAGE_REPOSITORY,
+#       and the outputs of assets: SBOM_SHA256, SBOM_PACKAGES,
+#       SBOM_BUNDLE_SHA256, PROVENANCE_BUNDLE_SHA256.
+#
+#   release-notes.sh assets DIGEST PROVENANCE_JSONL SBOM_JSONL OUTDIR
+#       Release assets from the Sigstore bundles of DIGEST (gh attestation
+#       download, verified by the workflow): OUTDIR/sbom.spdx.json (the SPDX
+#       document of the SBOM attestation), OUTDIR/provenance.sigstore.jsonl,
+#       OUTDIR/sbom.sigstore.jsonl and OUTDIR/SHA256SUMS. Every bundle must be
+#       an in-toto statement about DIGEST with the expected predicate type.
+#       Prints KEY=VALUE lines for $GITHUB_OUTPUT.
 #
 # Exit code 2 on usage error.
 set -Eeuo pipefail
 
 TAG_PATTERN='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
 MIGRATIONS_DIR=packages/db/src/migrations
+PROVENANCE_TYPE=https://slsa.dev/provenance/v1
+SBOM_TYPE=https://spdx.dev/Document/v2.3
 
 usage() {
-  sed -n '7,17p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '8,31p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -57,8 +71,14 @@ cmd_notes() {
   local tag=$1 commit digest=$3 since since_label
   : "${RELEASE_URL:?}" "${ATTESTATIONS:?}" "${RELEASE_IMAGE_RUN:?}" "${CI_RUN:?}" \
     "${SECURITY_RUN:?}" "${IMAGE_REPOSITORY:?}"
+  : "${SBOM_SHA256:?}" "${SBOM_PACKAGES:?}" "${SBOM_BUNDLE_SHA256:?}" "${PROVENANCE_BUNDLE_SHA256:?}"
   commit=$(full_commit "$2")
   [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || fail "not a digest: $digest"
+  local hash
+  for hash in "$SBOM_SHA256" "$SBOM_BUNDLE_SHA256" "$PROVENANCE_BUNDLE_SHA256"; do
+    [[ $hash =~ ^[0-9a-f]{64}$ ]] || fail "not a SHA-256: $hash"
+  done
+  [[ $SBOM_PACKAGES =~ ^[1-9][0-9]*$ ]] || fail "not a package count: $SBOM_PACKAGES"
 
   local upstream_repository upstream_commit upstream_tag upstream_version
   upstream_repository=$(upstream_field "$commit" repository)
@@ -87,13 +107,17 @@ cmd_notes() {
   cat <<EOF
 # $tag
 
-- Release: $RELEASE_URL
+- Version AgentFleet: $tag
+- Tag upstream de base: $upstream_tag
+- Commit upstream: $upstream_repository @ \`$upstream_commit\` (version $upstream_version)
 - Commit source: $commit
 - Digest: $digest
 - Image: \`$IMAGE_REPOSITORY@$digest\` (tags \`sha-$commit\` et \`$tag\`)
+- SBOM: \`sbom.spdx.json\` (SPDX 2.3, $SBOM_PACKAGES paquets, sha256 \`$SBOM_SHA256\`) ; bundle Sigstore \`sbom.sigstore.jsonl\` (sha256 \`$SBOM_BUNDLE_SHA256\`)
+- Provenance: SLSA, bundle Sigstore \`provenance.sigstore.jsonl\` (sha256 \`$PROVENANCE_BUNDLE_SHA256\`)
 - Attestation: $ATTESTATIONS
+- Release: $RELEASE_URL
 - CI: release-image $RELEASE_IMAGE_RUN ; ci $CI_RUN ; security $SECURITY_RUN
-- Upstream: $upstream_repository @ \`$upstream_commit\` ($upstream_tag, $upstream_version)
 - Compatibilité DB: $db
 EOF
   if [[ -n $migration_changes ]]; then
@@ -104,6 +128,10 @@ EOF
   fi
   cat <<EOF
 - Migrations: $migration_count dans l'image
+
+Pièces jointes : le SBOM et les bundles Sigstore de la provenance et du SBOM,
+vérifiables hors ligne (\`gh attestation verify oci://$IMAGE_REPOSITORY@$digest
+--bundle <bundle> …\`), et \`SHA256SUMS\`.
 
 Le rollback et le classement final de la compatibilité DB sont écrits dans la
 PR de promotion de paperclip-fleet (\`docs/deploy/PROMOTION.md\`), par rapport
@@ -117,11 +145,60 @@ EOF
   git log --first-parent --format='- %s (`%h`)' "$since..$commit"
 }
 
+# statements JSONL PREDICATE_TYPE HEX — the in-toto statement of each bundle,
+# one per line, after checking its envelope, subject and predicate type.
+statements() {
+  local file=$1 type=$2 hex=$3 line n=0 statement
+  [[ -s $file ]] || fail "no attestation bundle in $file"
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ -n $line ]] || continue
+    n=$((n + 1))
+    jq -e '.dsseEnvelope.payloadType == "application/vnd.in-toto+json"' >/dev/null 2>&1 <<<"$line" \
+      || fail "$file: bundle $n is not a DSSE envelope of an in-toto statement"
+    statement=$(jq -r '.dsseEnvelope.payload' <<<"$line" | base64 -d 2>/dev/null) \
+      || fail "$file: bundle $n has no readable payload"
+    jq -e --arg type "$type" '.predicateType == $type' >/dev/null 2>&1 <<<"$statement" \
+      || fail "$file: bundle $n is not a $type attestation"
+    jq -e --arg hex "$hex" 'any(.subject[]?; .digest.sha256 == $hex)' >/dev/null <<<"$statement" \
+      || fail "$file: bundle $n is not about sha256:$hex"
+    jq -c . <<<"$statement"
+  done <"$file"
+  ((n > 0)) || fail "no attestation bundle in $file"
+}
+
+cmd_assets() {
+  [[ $# -eq 4 ]] || usage
+  local digest=$1 provenance=$2 sbom=$3 out=$4 hex
+  [[ $digest =~ ^sha256:([0-9a-f]{64})$ ]] || fail "not a digest: $digest"
+  hex=${BASH_REMATCH[1]}
+  local sbom_statements documents packages
+  statements "$provenance" "$PROVENANCE_TYPE" "$hex" >/dev/null
+  sbom_statements=$(statements "$sbom" "$SBOM_TYPE" "$hex")
+  # Several SBOM attestations of one digest must carry the same document.
+  documents=$(jq -c '.predicate' <<<"$sbom_statements" | jq -S -c . | sort -u | wc -l)
+  ((documents == 1)) || fail "$sbom: $documents different SBOM documents for $digest"
+  mkdir -p "$out"
+  head -n 1 <<<"$sbom_statements" | jq '.predicate' >"$out/sbom.spdx.json"
+  jq -e '.spdxVersion == "SPDX-2.3"' >/dev/null "$out/sbom.spdx.json" || fail "the SBOM is not an SPDX 2.3 document"
+  packages=$(jq '.packages | length' "$out/sbom.spdx.json")
+  ((packages > 0)) || fail "the SBOM lists no package"
+  cp "$provenance" "$out/provenance.sigstore.jsonl"
+  cp "$sbom" "$out/sbom.sigstore.jsonl"
+  (cd "$out" && sha256sum sbom.spdx.json sbom.sigstore.jsonl provenance.sigstore.jsonl >SHA256SUMS)
+  sum() { sha256sum "$out/$1" | cut -d' ' -f1; }
+  echo "sbom_sha256=$(sum sbom.spdx.json)"
+  echo "sbom_packages=$packages"
+  echo "sbom_bundle_sha256=$(sum sbom.sigstore.jsonl)"
+  echo "provenance_bundle_sha256=$(sum provenance.sigstore.jsonl)"
+  echo "sums_sha256=$(sum SHA256SUMS)"
+}
+
 [[ $# -ge 1 ]] || usage
 command=$1
 shift
 case $command in
   check) cmd_check "$@" ;;
   notes) cmd_notes "$@" ;;
+  assets) cmd_assets "$@" ;;
   *) usage ;;
 esac
