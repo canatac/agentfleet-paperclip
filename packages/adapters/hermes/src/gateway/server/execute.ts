@@ -462,6 +462,8 @@ function extractStatus(value: unknown): string | null {
 function extractOutput(value: unknown): string | null {
   const record = asRecord(value);
   if (!record) return null;
+  // R2 FIX: Only extract from explicit output/result/text/summary/message fields.
+  // Do NOT extract from tool_calls, tool_results, or nested tool payloads.
   const direct =
     nonEmpty(record.output) ??
     nonEmpty(record.result) ??
@@ -469,8 +471,13 @@ function extractOutput(value: unknown): string | null {
     nonEmpty(record.summary) ??
     nonEmpty(record.message);
   if (direct) return direct;
+  // Only recurse into data/payload if they are explicit wrapper objects
   const nested = asRecord(record.data) ?? asRecord(record.payload);
-  return nested ? extractOutput(nested) : null;
+  // R2 FIX: Skip if nested contains tool_calls (would be tool result, not final)
+  if (nested && !Array.isArray(nested.tool_calls) && !Array.isArray(nested.tool_results)) {
+    return extractOutput(nested);
+  }
+  return null;
 }
 
 async function handleEvent(
@@ -654,7 +661,7 @@ function extractErrorMessage(value: unknown): string | null {
 function terminalResultCode(status: string): { exitCode: number; signal: string | null; errorCode: string | null } {
   if (status === "completed") return { exitCode: 0, signal: null, errorCode: null };
   if (FAILURE_STATUSES.has(status)) return { exitCode: 1, signal: null, errorCode: "hermes_gateway_run_failed" };
-  if (CANCELLED_STATUSES.has(status)) return { exitCode: 1, signal: "SIGTERM", errorCode: "hermes_gateway_cancelled" };
+  if (CANCELLED_STATUSES.has(status)) return { exitCode: 1, signal: "SIGTERM", errorCode: "RUN_CANCELLED" };
   return { exitCode: 1, signal: null, errorCode: "hermes_gateway_protocol_error" };
 }
 
@@ -667,28 +674,47 @@ export function mapFinalResultForTest(input: {
 }): AdapterExecutionResult {
   const redactText = input.redactText ?? sanitizeSensitiveText;
   const payload = input.terminal.payload ?? {};
-  const output = redactText(
-    input.terminal.output ?? extractOutput(payload) ?? input.outputChunks.join("").trim(),
-  );
+  // H3 FIX: Only accept explicit terminal.output or extractOutput from payload.
+  // outputChunks are for diagnostics ONLY — never as functional result.
+  const explicitOutput = input.terminal.output ?? extractOutput(payload);
+  const hasFinalResponse = explicitOutput !== null && explicitOutput !== undefined && explicitOutput.trim() !== "";
   const sessionId = extractSessionId(payload) ?? input.sessionKey;
   const sessionDisplayId = sessionId ? redactText(sessionId) : null;
   const mapped = terminalResultCode(input.terminal.status);
   const usage = parseUsage(payload);
   const costUsd = parseCostUsd(payload);
-  const errorMessage = mapped.errorCode
-    ? redactText(extractErrorMessage(payload) ?? `Hermes run ${input.terminal.status}`)
-    : null;
+
+  // H3 FIX: If run completed but no explicit final response, fail with MISSING_FINAL_RESPONSE
+  const errorMessage = !hasFinalResponse && input.terminal.status === "completed"
+    ? "MISSING_FINAL_RESPONSE: Hermes run completed without an explicit assistant final response"
+    : mapped.errorCode
+      ? redactText(extractErrorMessage(payload) ?? `Hermes run ${input.terminal.status}`)
+      : null;
+
+  const errorCode = !hasFinalResponse && input.terminal.status === "completed"
+    ? "MISSING_FINAL_RESPONSE"
+    : mapped.errorCode;
+
+  // H3 FIX: outputChunks go to diagnosticTranscript only, never to summary/output
+  // R2 FIX: Apply redactText to diagnosticTranscript, limit to 5000 chars with marker
+  const rawDiagnostic = input.outputChunks.join("").trim();
+  const diagnosticTranscript = rawDiagnostic.length > 5_000
+    ? redactText(rawDiagnostic.slice(0, 4_900)) + "\n...[TRUNCATED " + String(rawDiagnostic.length - 4_900) + " chars]"
+    : redactText(rawDiagnostic);
+  const output = hasFinalResponse ? redactText(explicitOutput) : null;
+
   return {
-    exitCode: mapped.exitCode,
+    exitCode: errorCode ? 1 : mapped.exitCode,
     signal: mapped.signal,
     timedOut: false,
     provider: "hermes_gateway",
     model: extractModel(payload),
-    ...(mapped.errorCode ? { errorCode: mapped.errorCode } : {}),
+    ...(errorCode ? { errorCode } : {}),
     ...(errorMessage ? { errorMessage } : {}),
     ...(usage ? { usage } : {}),
     ...(costUsd !== null ? { costUsd } : {}),
     ...(output ? { summary: output.slice(0, 2_000) } : {}),
+    ...(diagnosticTranscript ? { diagnosticTranscript: diagnosticTranscript.slice(0, 5_000) } : {}),
     sessionId: sessionDisplayId,
     sessionParams: {
       hermesRunId: input.terminal.runId,

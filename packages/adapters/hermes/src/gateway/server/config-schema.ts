@@ -71,6 +71,7 @@ export function getConfigSchema(): AdapterConfigSchema {
         type: "textarea",
         hint: "Optional stable Hermes instructions sent separately from the wake input.",
       },
+
     ],
   };
 }
