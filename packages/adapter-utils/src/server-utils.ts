@@ -2150,6 +2150,18 @@ export function isAssignmentShapedPaperclipWakeReason(
   );
 }
 
+// Upstream bootstrap guidance is delivered only on fresh provider attempts.
+export function selectInitialCommunicationGuidance(
+  context: Record<string, unknown> | null | undefined,
+  options: { resumedSession?: boolean } = {},
+): string {
+  return options.resumedSession === true
+    ? "" : joinPromptSections([
+        asString(context?.paperclipTaskCommunicationGuidance, "").trim(),
+        asString(context?.paperclipFreshSessionHandoffMarkdown, "").trim(),
+      ]);
+}
+
 // Picks the task-context markdown variant for adapters that inject it into the
 // prompt. Fresh sessions, assignment-shaped wakes, and recovery wakes get the
 // full brief; other resume deltas get the compact variant (description
@@ -2157,11 +2169,18 @@ export function isAssignmentShapedPaperclipWakeReason(
 // issue up. Falls back to the full variant when no compact one was provided.
 export function selectPaperclipTaskMarkdown(
   context: Record<string, unknown> | null | undefined,
-  options: { resumedSession?: boolean } = {},
+  options: { resumedSession?: boolean; includeCommunicationGuidance?: boolean } = {},
 ): string {
-  const full = asString(context?.paperclipTaskMarkdown, "").trim();
+  const full = asString(
+    context?.paperclipTaskMarkdownAssignment ?? context?.paperclipTaskMarkdown,
+    "",
+  ).trim();
   if (!full) return "";
-  if (options.resumedSession !== true) return full;
+  if (options.resumedSession !== true) {
+    const guidance = options.includeCommunicationGuidance === false
+      ? "" : selectInitialCommunicationGuidance(context, options);
+    return joinPromptSections([guidance, full]);
+  }
   const wake = normalizePaperclipWakePayload(context?.paperclipWake);
   if (!wake) return full;
   if (
@@ -2170,8 +2189,42 @@ export function selectPaperclipTaskMarkdown(
   ) {
     return full;
   }
-  const compact = asString(context?.paperclipTaskMarkdownCompact, "").trim();
+  const compact = asString(
+    context?.paperclipTaskMarkdownAssignmentCompact ?? context?.paperclipTaskMarkdownCompact,
+    "",
+  ).trim();
   return compact || full;
+}
+
+/** True when the structured prompt owns current wake comments (upstream v1). */
+export function paperclipWakeCommentsArePromptOwned(value: unknown): boolean {
+  const context = parseObject(value);
+  const turn = parseObject(context.paperclipTurnContext);
+  const events = parseObject(turn.events);
+  return turn.version === 1 && events.owner === "wake_prompt";
+}
+
+/** Select the authoritative task brief and wake events at the provider attempt. */
+export function selectPaperclipPromptSections(
+  context: Record<string, unknown> | null | undefined,
+  options: {
+    resumedSession?: boolean;
+    includeCommunicationGuidance?: boolean;
+    includeExecutionContract?: boolean;
+    nativeWakeReaderAvailable?: boolean;
+  } = {},
+): { taskContextNote: string; wakePrompt: string } {
+  const taskContextNote = selectPaperclipTaskMarkdown(context, options);
+  return {
+    taskContextNote,
+    wakePrompt: renderPaperclipWakePrompt(context?.paperclipWake, {
+      resumedSession: options.resumedSession,
+      includeExecutionContract: options.includeExecutionContract,
+      nativeWakeReaderAvailable: options.nativeWakeReaderAvailable,
+      conversationMode: context?.conversationMode === true,
+      suppressIssueDescription: taskContextNote.length > 0,
+    }),
+  };
 }
 
 // Runtime-only connector skills are supplied by the server after assignment resolution.
@@ -2220,7 +2273,8 @@ function renderPaperclipWakePromptBody(
   // fresh sessions; only resume deltas (which replace the template) and
   // template-less adapters need the wake-payload copy.
   const includeExecutionContract = options.conversationMode !== true &&
-    (resumedSession || options.includeExecutionContract === true);
+    ((resumedSession && options.includeExecutionContract !== false) ||
+      options.includeExecutionContract === true);
   const hasWakeCommentBatch =
     normalized.comments.length > 0 ||
     normalized.includedCount > 0 ||

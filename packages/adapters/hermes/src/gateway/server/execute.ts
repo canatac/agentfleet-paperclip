@@ -8,9 +8,9 @@ import {
   asString,
   parseObject,
   readPaperclipIssueWorkModeFromContext,
-  renderPaperclipWakePrompt,
   isPaperclipRecoveryWakePayload,
-  selectPaperclipTaskMarkdown,
+  paperclipWakeCommentsArePromptOwned,
+  selectPaperclipPromptSections,
   stringifyPaperclipWakePayload,
 } from "@paperclipai/adapter-utils/server-utils";
 import {
@@ -272,16 +272,16 @@ function buildInput(ctx: AdapterExecutionContext, paperclipApiUrl: string | null
   const resumedSession =
     (sessionKeyStrategy === "issue" || sessionKeyStrategy === "agent") &&
     Boolean(nonEmpty(ctx.runtime?.sessionId));
-  const taskMarkdown = nonEmpty(selectPaperclipTaskMarkdown(ctx.context, { resumedSession }));
-  const wakePrompt = renderPaperclipWakePrompt(ctx.context.paperclipWake, {
-    conversationMode: ctx.context.conversationMode === true,
-    // The task-context markdown is the authoritative brief on this lane; keep
-    // the wake prompt's description copy out so the prompt carries it once.
-    suppressIssueDescription: Boolean(taskMarkdown),
+  const { taskContextNote: taskMarkdown, wakePrompt } = selectPaperclipPromptSections(ctx.context, {
+    resumedSession,
+    // This gateway owns its execution contract; never add a second one on resume.
+    includeExecutionContract: false,
   });
-  const wakePayloadJson = stringifyPaperclipWakePayload(ctx.context.paperclipWake, {
-    omitIssueDescription: Boolean(taskMarkdown),
-  });
+  const wakePayloadJson = paperclipWakeCommentsArePromptOwned(ctx.context)
+    ? null
+    : stringifyPaperclipWakePayload(ctx.context.paperclipWake, {
+        omitIssueDescription: Boolean(taskMarkdown),
+      });
   const sessionHandoff = nonEmpty(ctx.context.paperclipSessionHandoffMarkdown);
   const issueWorkMode = readPaperclipIssueWorkModeFromContext(ctx.context);
   const lines = [
@@ -324,12 +324,14 @@ function buildRunBody(ctx: AdapterExecutionContext, sessionKey: string | null): 
   const paperclipApiUrl = nonEmpty(ctx.config.paperclipApiUrl);
   const payloadTemplate = parseObject(ctx.config.payloadTemplate);
   const configuredInput = nonEmpty(payloadTemplate.input);
-  const input = configuredInput && ctx.context.conversationMode === true
+  // A configured per-turn prefix must never hide the dynamic ticket context.
+  // Git business prompts belong in payloadTemplate.instructions instead.
+  const input = configuredInput
     ? `${configuredInput}\n\n${buildInput(ctx, paperclipApiUrl)}`
-    : configuredInput ?? buildInput(ctx, paperclipApiUrl);
+    : buildInput(ctx, paperclipApiUrl);
   const instructions =
-    nonEmpty(ctx.config.instructions) ??
-    nonEmpty(payloadTemplate.instructions) ??
+    untrimmedNonBlank(ctx.config.instructions) ??
+    untrimmedNonBlank(payloadTemplate.instructions) ??
     "Follow the Paperclip wake instructions exactly. Do not expose secrets in logs, comments, or final output.";
   return {
     ...payloadTemplate,

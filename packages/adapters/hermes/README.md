@@ -15,6 +15,30 @@ and Paperclip should start `hermes chat` for each heartbeat. Choose
 another host, in Docker, or behind a private-network/TLS endpoint. The adapter
 type keys did not change during package consolidation.
 
+### AgentFleet gateway prompt contract
+
+AgentFleet projects the versioned Git business prompt into
+`adapterConfig.payloadTemplate.instructions`. The gateway sends that string
+unchanged, including leading/trailing whitespace, separately from `input`.
+`input` contains the current Paperclip task brief, wake events, runtime
+identity and mode. Shared upstream `selectPaperclipPromptSections` rules
+select full versus compact task context for fresh/resumed issue and agent
+sessions; assignment and recovery wakes keep the full brief. Run/none
+session strategies always get a fresh brief.
+
+Upstream top-level `adapterConfig.instructions` remains supported and takes
+precedence for non-declarative users. AgentFleet's declarative comparison
+rejects that override and persisted `payloadTemplate.input` as drift. A
+legacy custom input is still accepted by the adapter as a per-turn prefix,
+and always includes the dynamic ticket context. It no longer replaces that
+context on ordinary non-chat turns. Existing declarations require an
+explicit configuration migration before promotion.
+
+Prompt section selection does not change AgentFleet's H3/R2 protections:
+an explicit final response is required, SSE chunks remain diagnostic only,
+diagnostics are redacted and bounded, and opaque Hermes run IDs remain
+untrimmed. Integration tracking: `canatac/paperclip-fleet#287` and `#288`.
+
 ## Key Features
 
 This adapter provides:
