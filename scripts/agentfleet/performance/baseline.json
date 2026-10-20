@@ -1,0 +1,11 @@
+{
+  "source_commit": "8224c4620a55e6174c6ac9388f2eaccf7ddcf9c3",
+  "sha256": {
+    ".github/actions/agentfleet-image/action.yml": "60493b258ac0f9adf8400f6dcf8547f36fe90eda2c0d74a7697d08555ae6ae17",
+    ".github/workflows/ci.yml": "1284e365ee6de7fc2e26fd8f1f6babde0333eeeb0aacf2606cf3e3d74bc9e9de",
+    ".github/workflows/dependency-review.yml": "69cff6c2917fa1cc5a27ae42663fcdfa55d6cab9c55f3eea7cc9b37b4fe23a65",
+    ".github/workflows/release-image.yml": "e00f0b33653f93b1dbcf8a35c120963e901f4e01264ba8833dbcb51ee5e7d869",
+    ".github/workflows/release.yml": "97f2d4b7cd928974c76e040f1b9803162da1ec23aa52c6a6755270258b9045ab",
+    ".github/workflows/security.yml": "bb7f9a005e32e8951d147586a2b0fe6010c831a2ca26fad61493077af252c04c"
+  }
+}
