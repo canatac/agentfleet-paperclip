@@ -1,4 +1,4 @@
-# Manual image candidate. The original release action is unchanged.
+# Manual image candidate. Only GitHub-owned or repository-local actions.
 name: agentfleet-image-candidate
 description: Candidate image checks with isolated BuildKit and Go caches; no publication.
 inputs:
@@ -64,27 +64,40 @@ runs:
           "io.github.paperclipai.schema.migration-count=$migration_count"
         echo "AGENTFLEET_CANDIDATE_LABELS"
       } >>"$GITHUB_OUTPUT"
-  - name: Build and load with the native GitHub Actions cache backend
-    uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
-    env:
-      DOCKER_BUILD_RECORD_UPLOAD: 'false'
+  - name: Restore isolated image layer cache
+    uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
     with:
-      builder: agentfleet-candidate
-      context: .
-      file: Dockerfile
-      target: production
-      platforms: linux/amd64
-      load: true
-      push: false
-      provenance: false
-      sbom: false
-      tags: ${{ steps.metadata.outputs.image }}
-      build-args: |-
-        PAPERCLIP_BUILD_COMMIT=${{ inputs.commit }}
-        CLI_TOOLS_CACHE_EPOCH=${{ steps.metadata.outputs.epoch }}
-      labels: ${{ steps.metadata.outputs.labels }}
-      cache-from: type=gha,version=2,scope=ci-candidate-image-amd64
-      cache-to: type=gha,version=2,scope=ci-candidate-image-amd64,mode=max
+      path: ${{ runner.temp }}/image-candidate-cache
+      key: ci-candidate-image-local-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      restore-keys: ci-candidate-image-local-v1-${{ runner.os }}-${{ runner.arch }}-
+  - name: Build and load with permitted Docker CLI and GitHub cache
+    shell: bash
+    env:
+      IMAGE: ${{ steps.metadata.outputs.image }}
+      LABELS: ${{ steps.metadata.outputs.labels }}
+      COMMIT: ${{ inputs.commit }}
+      EPOCH: ${{ steps.metadata.outputs.epoch }}
+    run: |
+      set -euo pipefail
+      label_args=()
+      while IFS= read -r label; do
+        [[ -z $label ]] || label_args+=(--label "$label")
+      done <<< "$LABELS"
+      [[ ${#label_args[@]} == 22 ]]
+      df -h /
+      docker buildx build \
+        --builder agentfleet-candidate \
+        --load \
+        --cache-from "type=local,src=$RUNNER_TEMP/image-candidate-cache" \
+        --cache-to "type=local,dest=$RUNNER_TEMP/image-candidate-cache-next,mode=max" \
+        --file Dockerfile --target production --platform linux/amd64 \
+        --provenance=false --sbom=false \
+        --build-arg "PAPERCLIP_BUILD_COMMIT=$COMMIT" \
+        --build-arg "CLI_TOOLS_CACHE_EPOCH=$EPOCH" \
+        "${label_args[@]}" --tag "$IMAGE" .
+      rm -rf "$RUNNER_TEMP/image-candidate-cache"
+      mv "$RUNNER_TEMP/image-candidate-cache-next" "$RUNNER_TEMP/image-candidate-cache"
+      df -h /
   - name: Record the exact locally tested image
     id: build
     shell: bash

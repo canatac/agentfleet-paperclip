@@ -77,11 +77,20 @@ test("manual candidates use separate concurrency and preserve the combined verif
   assert.match(ci, /runner-protocol\.log/);
   assert.match(ci, /runner-rust\.log/);
   const image = read(".github/actions/agentfleet-image-candidate/action.yml");
-  assert.match(image, /load: true/);
-  assert.match(image, /cache-from: type=gha,version=2,scope=ci-candidate-image-amd64/);
-  assert.match(image, /cache-to: type=gha,version=2,scope=ci-candidate-image-amd64,mode=max/);
-  assert.match(image, /push: false/);
+  assert.match(image, /--load/);
+  assert.match(image, /--cache-from "type=local/);
+  assert.match(image, /--cache-to "type=local[^\n]+mode=max/);
+  assert.doesNotMatch(image, /uses: docker\//);
   assert.match(image, /image-smoke\.sh/);
   assert.match(image, /sum\.golang\.org|go install/);
   assert.doesNotMatch(image, /docker push|docker login|gh attestation/);
+});
+
+
+test("candidate actions comply with the repository action allowlist", () => {
+  for (const name of [".github/workflows/ci-candidate.yml", ".github/workflows/image-candidate.yml", ".github/actions/agentfleet-deps-candidate/action.yml", ".github/actions/agentfleet-image-candidate/action.yml"]) {
+    for (const [, action] of read(name).matchAll(/uses: ([^\s]+)\s/g)) {
+      assert.ok(action.startsWith("actions/") || action.startsWith("./"), `${name}: ${action}`);
+    }
+  }
 });

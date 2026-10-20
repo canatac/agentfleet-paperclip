@@ -46,9 +46,11 @@ lors de la future activation. Le candidat manuel n'est pas leur remplacement.
 
 Le workflow appelle une copie indépendante de l'action image :
 
-- Builder BuildKit isolé et cache de couches GitHub Actions (`type=gha`,
-  API v2, scope distinct) réservé au candidat. Le cache est transféré par
-  BuildKit, sans archive locale supplémentaire occupant le disque du runner.
+- Builder BuildKit isolé et cache de couches local exporté par
+  `actions/cache`, dans un espace réservé au candidat. Les commandes Docker
+  sont exécutées directement : le dépôt refuse les actions tierces Docker.
+  Cette restriction est conservée. Le pic disque et le coût du transfert du
+  cache complet font partie de la qualification.
 - Image chargée localement avec `--load`, puis même smoke test positif et
   même contre-test du faux commit que dans l'action actuelle.
 - Même Syft 1.52.0 compilé avec Go 1.26.3 et la vérification Go habituelle,
