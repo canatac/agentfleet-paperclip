@@ -1,0 +1,31 @@
+# Manual performance candidate. Existing workflows stay unchanged.
+name: image-candidate
+'on':
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: image-candidate-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify-image:
+    name: candidate / image build, smoke and SBOM
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - name: Build, smoke test and SBOM
+      uses: ./.github/actions/agentfleet-image-candidate
+      with:
+        commit: ${{ github.sha }}
+        out-dir: ${{ runner.temp }}/image-candidate
+    - name: Keep image evidence
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: image-candidate-${{ github.sha }}
+        path: ${{ runner.temp }}/image-candidate
+        if-no-files-found: warn
+        retention-days: 14

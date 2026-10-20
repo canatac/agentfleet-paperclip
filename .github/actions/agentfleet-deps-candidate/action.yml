@@ -1,0 +1,26 @@
+# Manual performance candidate. Existing workflows stay unchanged.
+name: Candidate dependency installation
+description: Exact pnpm install with a separate package-store cache. No node_modules or verdict cache.
+runs:
+  using: composite
+  steps:
+  - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+    with:
+      node-version: 24
+      package-manager-cache: false
+  - name: Pinned pnpm and store location
+    id: store
+    shell: bash
+    run: |-
+      corepack enable pnpm
+      expected="$(node -p "require('./package.json').packageManager")"
+      test "pnpm@$(pnpm --version)" = "$expected"
+      echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+  - name: Candidate pnpm store cache
+    uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+    with:
+      path: ${{ steps.store.outputs.path }}
+      key: ci-candidate-pnpm-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', 'patches/**', '.npmrc') }}
+  - name: Install from the unchanged lockfile
+    shell: bash
+    run: pnpm install --frozen-lockfile
