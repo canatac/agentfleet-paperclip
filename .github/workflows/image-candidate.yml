@@ -1,7 +1,10 @@
-# Manual performance candidate. Existing workflows stay unchanged.
+# Qualification branch only. Main and active workflows are unchanged.
 name: image-candidate
 'on':
   workflow_dispatch: {}
+  push:
+    branches:
+    - work/ci-performance-qualification-image-20261020
 permissions:
   contents: read
 concurrency:

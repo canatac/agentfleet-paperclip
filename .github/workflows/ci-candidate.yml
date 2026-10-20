@@ -1,4 +1,4 @@
-# Manual performance candidate. Existing workflows stay unchanged.
+# Qualification branch only. Main and active workflows are unchanged.
 name: ci-candidate
 'on':
   workflow_dispatch:
@@ -8,6 +8,9 @@ name: ci-candidate
         required: true
         type: string
         default: 8224c4620a55e6174c6ac9388f2eaccf7ddcf9c3
+  push:
+    branches:
+    - work/ci-performance-qualification-ci-20261020
 permissions:
   contents: read
 concurrency:
@@ -30,7 +33,7 @@ jobs:
         fetch-depth: 0
     - name: Validate comparison baseline
       env:
-        BASE_SHA: ${{ inputs.comparison_base }}
+        BASE_SHA: ${{ inputs.comparison_base || '8224c4620a55e6174c6ac9388f2eaccf7ddcf9c3' }}
       run: |-
         [[ $BASE_SHA =~ ^[0-9a-f]{40}$ ]]
         git cat-file -e "$BASE_SHA^{commit}"
@@ -72,7 +75,7 @@ jobs:
     - name: Migration ordering against the target branch
       run: node .github/scripts/check-pr-migration-order.mjs "$BASE_SHA" "$GITHUB_SHA"
       env:
-        BASE_SHA: ${{ inputs.comparison_base }}
+        BASE_SHA: ${{ inputs.comparison_base || '8224c4620a55e6174c6ac9388f2eaccf7ddcf9c3' }}
     - name: Candidate workflow and command contracts
       run: node --test scripts/agentfleet/performance/*.test.mjs
   typecheck:

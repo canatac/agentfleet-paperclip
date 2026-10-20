@@ -67,7 +67,10 @@ test("manual candidates use separate concurrency and preserve the combined verif
   for (const file of ["ci-candidate.yml", "image-candidate.yml"]) {
     const source = read(`.github/workflows/${file}`);
     assert.match(source, /workflow_dispatch:/);
-    assert.doesNotMatch(source, /^\s*(push|pull_request|schedule|workflow_run):/m);
+    const qualificationBranch = file === "ci-candidate.yml" ? "work/ci-performance-qualification-ci-20261020" : "work/ci-performance-qualification-image-20261020";
+    const pushBlock = source.match(/\n  push:\n    branches:\n    - ([^\n]+)\n/);
+    assert.equal(pushBlock?.[1], qualificationBranch);
+    assert.doesNotMatch(source, /^\s*(pull_request|schedule|workflow_run):/m);
     assert.doesNotMatch(source, /packages: write|id-token: write|attestations: write|self-hosted/);
     assert.match(source, /group: (ci|image)-candidate-/);
   }
