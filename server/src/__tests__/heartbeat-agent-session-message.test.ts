@@ -6,7 +6,7 @@ describe("agent session wake messages", () => {
   it("includes the issue brief and requires fallback fetch when a long description is truncated", async () => {
     const description = [
       "Update launch-card.svg and change the CTA to Try Team free.",
-      "x".repeat(13_000),
+      "x".repeat(170_000),
     ].join("\n");
 
     const wakePayload = await buildPaperclipWakePayload({
@@ -38,11 +38,41 @@ describe("agent session wake messages", () => {
       descriptionTruncated: true,
     });
     expect(wakePayload?.issue?.description).toContain("Try Team free");
-    expect(wakePayload?.issue?.description).toHaveLength(12_000);
+    expect(wakePayload?.issue?.description).toHaveLength(160_000);
     expect(wakePayload).toMatchObject({
       truncated: true,
       fallbackFetchNeeded: true,
     });
+  });
+
+  it("inlines a description of the team sprint whole, up to 160 000 characters (paperclip-fleet #552)", async () => {
+    const description = ["# Working protocol of the Scrum Team", "y".repeat(149_000), "END-OF-THE-STATE"].join("\n");
+    const wakePayload = await buildPaperclipWakePayload({
+      db: {
+        select: () => ({
+          from: () => ({
+            where: async () => [],
+          }),
+        }),
+      } as never,
+      companyId: "company-1",
+      contextSnapshot: {
+        wakeReason: "issue_assigned",
+        issueId: "issue-1",
+      },
+      issueSummary: {
+        id: "issue-1",
+        identifier: "PAP-1",
+        title: "AF-TEAM-001 sprint wake: frontend-dev",
+        description,
+        status: "backlog",
+        priority: "medium",
+        workMode: "standard",
+      },
+    });
+
+    expect(wakePayload?.issue?.description).toBe(description);
+    expect(wakePayload?.issue?.descriptionTruncated).toBe(false);
   });
 
   it("turns the canonical session-message context into adapter prompt input", async () => {

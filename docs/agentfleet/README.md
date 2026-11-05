@@ -99,6 +99,14 @@ Les fichiers Vitest de cette liste sont exclus par
 | `server/src/__tests__/docker-build-stamp.test.ts` | Vitest (serveur) | ne se charge plus (5 tests) ; ajouté le 26/09 |
 | `tests/runner-e2e/codex-ci-sandbox.test.ts`, `daytona-image.test.ts`, `workflow-security.test.ts` | Vitest (`tests/runner-e2e`) | 11 / 18 |
 
+## Écarts du code upstream
+
+| Ticket | Fichier | Écart | Raison |
+|---|---|---|---|
+| AF-TEAM-001g ([paperclip-fleet#552](https://github.com/canatac/paperclip-fleet/issues/552)) | `server/src/services/heartbeat.ts` | `MAX_INLINE_WAKE_ISSUE_DESCRIPTION_CHARS` passe de 12 000 à 160 000 caractères | le sprint de l'équipe met dans la description de l'issue de réveil le protocole, le travail de l'agent, les fichiers demandés et l'état des dépôts (jusqu'à environ 150 000 caractères) ; les agents n'ont pas d'outil pour lire la suite |
+
+Une resynchronisation garde ces écarts, ou les retire par une décision consignée dans `paperclip-fleet`.
+
 ## Resynchronisation avec l'upstream
 
 Chaque montée de version upstream passe par une PR dédiée qui intègre la

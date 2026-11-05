@@ -723,7 +723,11 @@ const MAX_INLINE_WAKE_COMMENTS = 8;
 const MAX_INLINE_WAKE_ATTACHMENTS = 20;
 const MAX_INLINE_WAKE_COMMENT_BODY_CHARS = 4_000;
 const MAX_INLINE_WAKE_COMMENT_BODY_TOTAL_CHARS = 12_000;
-const MAX_INLINE_WAKE_ISSUE_DESCRIPTION_CHARS = 12_000;
+// AgentFleet (paperclip-fleet #552): the team sprint puts its working
+// protocol, the work of the agent, the files it asked for and the state of
+// the repositories in the description of the wake issue, up to about
+// 150 000 characters; the agents have no tool to fetch the rest.
+const MAX_INLINE_WAKE_ISSUE_DESCRIPTION_CHARS = 160_000;
 const MAX_AGENT_SESSION_MESSAGE_CHARS = 12_000;
 const execFile = promisify(execFileCallback);
 const EXECUTION_PATH_HEARTBEAT_RUN_STATUSES = [
